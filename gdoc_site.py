@@ -1548,6 +1548,17 @@ APP_JS = """\
 (function () {
   // in-page highlight: landing here with ?q=terms (from a search result
   // click) marks every occurrence of the terms in the document text
+  function findWord(lower, tk, from) {
+    var i = lower.indexOf(tk, from || 0);
+    while (i !== -1) {
+      var b = i === 0 || !/[a-z0-9]/.test(lower.charAt(i - 1));
+      var e = i + tk.length >= lower.length ||
+        !/[a-z0-9]/.test(lower.charAt(i + tk.length));
+      if (b && e) return i;
+      i = lower.indexOf(tk, i + 1);
+    }
+    return -1;
+  }
   var m = location.search.match(/[?&]q=([^&]+)/);
   if (m) {
     var terms = decodeURIComponent(m[1].replace(/\+/g, " ")).toLowerCase()
@@ -1564,7 +1575,7 @@ APP_JS = """\
         var lower = txt.toLowerCase();
         var hit = false;
         for (var tk = 0; tk < terms.length; tk++) {
-          if (lower.indexOf(terms[tk]) !== -1) { hit = true; break; }
+          if (findWord(lower, terms[tk], 0) !== -1) { hit = true; break; }
         }
         if (!hit) continue;
         var frag = document.createDocumentFragment();
@@ -1572,7 +1583,7 @@ APP_JS = """\
         while (pos < len) {
           var best = -1, bl = 0;
           for (tk = 0; tk < terms.length; tk++) {
-            var k = lower.indexOf(terms[tk], pos);
+            var k = findWord(lower, terms[tk], pos);
             if (k >= 0 && (best < 0 || k < best)) { best = k; bl = terms[tk].length; }
           }
           if (best < 0) { frag.appendChild(document.createTextNode(txt.slice(pos))); break; }
@@ -1594,6 +1605,19 @@ APP_JS = """\
   var results = [];
 
   function qs(sel) { return document.querySelector(sel); }
+
+  // whole-word (case-insensitive) matching: "bas" must not match "based"
+  function findWord(lower, tk, from) {
+    var i = lower.indexOf(tk, from || 0);
+    while (i !== -1) {
+      var b = i === 0 || !/[a-z0-9]/.test(lower.charAt(i - 1));
+      var e = i + tk.length >= lower.length ||
+        !/[a-z0-9]/.test(lower.charAt(i + tk.length));
+      if (b && e) return i;
+      i = lower.indexOf(tk, i + 1);
+    }
+    return -1;
+  }
 
   // --- theme toggle (persisted in localStorage; default dark) -------------
   var themeBtn = qs("#theme-toggle");
@@ -1688,10 +1712,10 @@ APP_JS = """\
       var runs = [];
       tokens.forEach(function (tk) {
         if (!tk) return;
-        var i = low.indexOf(tk);
-        while (i >= 0) {
+        var i = findWord(low, tk, 0);
+        while (i !== -1) {
           runs.push([i, i + tk.length]);
-          i = low.indexOf(tk, i + tk.length);
+          i = findWord(low, tk, i + tk.length);
         }
       });
       if (!runs.length) return escHtml(txt);
@@ -1715,7 +1739,7 @@ APP_JS = """\
       var lower = (full || "").toLowerCase();
       var idx = -1;
       (tokensOrEmpty()).forEach(function (tk) {
-        var k = lower.indexOf(tk);
+        var k = findWord(lower, tk, 0);
         if (k >= 0 && (idx < 0 || k < idx)) idx = k;
       });
       if (idx < 0) return mark((full || "").slice(0, 160), tokensOrEmpty());
@@ -1733,8 +1757,8 @@ APP_JS = """\
       var lo = (full || "").toLowerCase(), total = 0;
       tks.forEach(function (tk) {
         if (!tk) return;
-        var i = 0, tl = tk.length;
-        while ((i = lo.indexOf(tk, i)) !== -1) { total++; i += tl; }
+        var i = findWord(lo, tk, 0), tl = tk.length;
+        while (i !== -1) { total++; i = findWord(lo, tk, i + tl); }
       });
       return total;
     }
@@ -1743,7 +1767,7 @@ APP_JS = """\
       var lo = (full || "").toLowerCase(), idx = -1;
       tks.forEach(function (tk) {
         if (!tk) return;
-        var k = lo.indexOf(tk);
+        var k = findWord(lo, tk, 0);
         if (k >= 0 && (idx < 0 || k < idx)) idx = k;
       });
       if (idx < 0) return null;
@@ -1811,12 +1835,12 @@ APP_JS = """\
       tokens = val.split(/\s+/);
       var out = [];
       data.sections.forEach(function (s) {
-        if (tokens.every(function (tk) { return s._hay.indexOf(tk) !== -1; })) {
+        if (tokens.every(function (tk) { return findWord(s._hay, tk, 0) !== -1; })) {
           var title = s.title.toLowerCase();
           var score = 0;
-          if (title.indexOf(val) === 0) score -= 200;
+          if (findWord(title, val, 0) === 0) score -= 200;
           else if (title.indexOf(val) !== -1) score -= 100;
-          score += s._hay.indexOf(tokens[0]);
+          score += findWord(s._hay, tokens[0], 0);
           out.push({ s: s, score: score });
         }
       });

@@ -11,6 +11,22 @@ A fast, lightweight static site mirror of the [MSST Bible Google Doc](https://do
 - **Auto-updates** — GitHub Actions regenerates on a schedule
 - **Free hosting** — Cloudflare Pages with HTTPS
 
+## Run your own mirror
+
+Fork the repo and the whole pipeline works. Four things to set:
+
+1. **Fork** the repo on GitHub (or use Code → Download ZIP).
+2. **Make your Google Doc public** — File → Share → "Anyone with the link".
+3. **Point it at your doc** — edit the `Generate site` step of
+   `.github/workflows/deploy.yml`: `--doc YOUR_DOC_ID`, and pick your own
+   project name (see below).
+4. **Add your Cloudflare secrets and deploy** (next section).
+
+The workflow **auto-creates the Cloudflare Pages project** on the first
+deploy, so there's nothing to set up in the dashboard. On your fork, enable
+Actions (the Actions tab prompts once), add the two secrets, and hit
+**Run workflow**.
+
 ## Quick Start
 
 ### Local development
@@ -28,9 +44,10 @@ python serve.py --dir _site
 
 The site lives at `https://msst-bible.pages.dev` (a Cloudflare Pages project named `msst-bible`). GitHub Actions builds it on a schedule and pushes the result to Cloudflare via Direct Upload.
 
-1. **Create the Cloudflare Pages project** (`msst-bible`)
-   - Cloudflare Dashboard → **Workers & Pages** → **Create application** → **Pages**
-   - Name it `msst-bible` → the site will be at `https://msst-bible.pages.dev`
+1. **Pick a project name**
+   - The default is `msst-bible` (set as `CLOUDFLARE_PAGES_PROJECT` in `.github/workflows/deploy.yml`).
+   - The workflow creates the project automatically on the first deploy — no manual creation needed.
+   - Your site will live at `https://<project-name>.pages.dev`
 
 2. **Create an API token**
    - Cloudflare Dashboard → **My Profile** → **API Tokens** → **Create Token**
@@ -44,7 +61,7 @@ The site lives at `https://msst-bible.pages.dev` (a Cloudflare Pages project nam
 
 4. **Done!** The site will:
    - Update every hour via GitHub Actions (the `schedule` in `.github/workflows/deploy.yml`)
-   - Deploy automatically on push or manual run
+   - Redeploy on demand via the **Run workflow** button
    - Be available at `https://msst-bible.pages.dev`
 
 ## How It Works
@@ -86,13 +103,14 @@ on:
 
 ### Use a different Google Doc
 
-Edit the `--doc` parameter in `.github/workflows/deploy.yml`:
+Edit the parameters in the `Generate site` step of `.github/workflows/deploy.yml`:
 
 ```yaml
 - name: Generate site
   run: |
     python gdoc_site.py \
       --doc YOUR_DOC_ID \
+      --base-url https://your-project.pages.dev/ \
       --out _site
 ```
 

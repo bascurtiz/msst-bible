@@ -2,8 +2,8 @@ name: Deploy Google Doc Mirror
 
 on:
   schedule:
-    # Runs every hour
-    - cron: '0 * * * *'
+    # Runs every 5 minutes
+    - cron: '*/5 * * * *'
   workflow_dispatch: # Allow manual trigger
 
 permissions:

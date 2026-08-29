@@ -1312,17 +1312,22 @@ STYLE_CSS = """\
   --sidebar-bg: #161b22; --border: #30363d;
   --accent: #4493f8; --accent-soft: #1f3a5f;
   --code-bg: #1c2128; --table-border: #30363d;
+  /* neutral backdrop + the "sheet of paper" the document sits on */
+  --page-bg: #0b0e14;
+  --paper-bg: #1c2331;
 }
 :root[data-theme="light"] {
   --bg: #ffffff; --fg: #1f2328; --muted: #656d76;
   --sidebar-bg: #f6f8fa; --border: #d8dee4;
   --accent: #0969da; --accent-soft: #ddf4ff;
   --code-bg: #eff1f3; --table-border: #d0d7de;
+  --page-bg: #f8f9fa;
+  --paper-bg: #ffffff;
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
-  margin: 0; background: var(--bg); color: var(--fg);
+  margin: 0; background: var(--page-bg); color: var(--fg);
   font: 16px/1.65 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 a { color: var(--accent); text-decoration: none; font-weight: 600; }
@@ -1386,8 +1391,15 @@ a:hover { text-decoration: underline; }
 .toc-preview.show { opacity: 1; transform: translateY(0); }
 .sidebar-foot { margin: 18px 6px 0; font-size: 12px; color: var(--muted); }
 
-.content { flex: 1; min-width: 0; padding: 28px 32px 80px; }
-@media (min-width: 1000px) { .content { max-width: 820px; margin: 0 auto; } }
+.content {
+  flex: 1; min-width: 0; padding: 36px 40px 72px;
+  background: var(--paper-bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .12), 0 1px 2px rgba(0, 0, 0, .08);
+}
+@media (min-width: 1000px) {
+  .content { max-width: 860px; margin: 24px auto 48px; }
+}
 
 .crumbs { font-size: 14px; color: var(--muted); margin-bottom: 8px; }
 h1 { font-size: 26px; line-height: 1.3; margin: 4px 0 10px; font-weight: 400; }
@@ -1458,11 +1470,13 @@ footer { margin-top: 48px; font-size: 13px; color: var(--muted); }
   .sidebar { position: fixed; top: 49px; bottom: 0; left: 0; z-index: 20;
     transform: translateX(-100%); transition: transform .18s ease; max-height: none; }
   .sidebar.open { transform: translateX(0); }
-  .content { padding: 20px 18px 60px; max-width: none; margin: 0; }
+  .content { padding: 20px 18px 60px; max-width: none; margin: 0;
+    border-radius: 0; box-shadow: none; border-left: none; border-right: none; }
 }
 @media print {
   .topbar, .sidebar, .pager, .crumbs { display: none !important; }
-  .content { max-width: none; padding: 0; margin: 0; }
+  .content { max-width: none; padding: 0; margin: 0;
+    background: none; border: none; box-shadow: none; }
 }
 """
 

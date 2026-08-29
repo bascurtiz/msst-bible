@@ -1046,17 +1046,62 @@ def parse_export(html_text, title="Google Doc", doc_id=""):
 # fetch
 # ---------------------------------------------------------------------------
 
-def http_get(url, timeout=180, headers=None):
+RETRYABLE_STATUS = (429, 500, 502, 503, 504)
+
+
+def http_get(url, timeout=180, headers=None, retries=4):
+    """Fetch a URL, retrying transient failures with exponential backoff.
+
+    Returns (text, final_url). HTTP 429/5xx responses and network errors
+    are retried up to `retries` times; other HTTP errors (401/403/404 …)
+    are re-raised immediately, since retrying cannot help them.
+    """
     h = {"User-Agent": USER_AGENT}
     if headers:
         h.update(headers)
     req = urllib.request.Request(url, headers=h)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read().decode("utf-8", "replace")
+    delay = 3.0
+    attempt = 0
+    while True:
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                text = resp.read().decode("utf-8", "replace")
+                return text, resp.geturl()
+        except urllib.error.HTTPError as e:
+            retryable = e.code in RETRYABLE_STATUS
+            exc = e
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            retryable = True
+            exc = e
+        if not retryable or attempt >= retries:
+            raise exc
+        attempt += 1
+        sys.stderr.write(f"  fetch failed, retrying in {delay:.0f}s "
+                         f"(attempt {attempt}/{retries}) — {url}\n")
+        time.sleep(delay)
+        delay = min(delay * 2, 30) + 0.5
+
+
+LOGIN_HOSTS = ("accounts.google.com", "accounts.google.com.")
 
 
 def fetch_export(doc):
-    return http_get(EXPORT_URL.format(doc=doc))
+    """Fetch the public HTML export of a Google Doc.
+
+    Raises RuntimeError if Google redirected us to a sign-in page instead of
+    the document (i.e. the doc is not shared "Anyone with the link").
+    """
+    text, final_url = http_get(EXPORT_URL.format(doc=doc))
+    host = urllib.parse.urlsplit(final_url).netloc.lower()
+    if host in LOGIN_HOSTS or "ServiceLogin" in final_url:
+        raise RuntimeError(
+            "Google returned a sign-in page — make sure the document is "
+            "shared as 'Anyone with the link' (see README.md)")
+    if len(text) < 50_000:
+        sys.stderr.write(f"  warning: export is suspiciously small "
+                         f"({len(text)} bytes); Google may have served an "
+                         f"error page instead of the document\n")
+    return text
 
 
 def token_post(params):
@@ -1112,8 +1157,9 @@ def fetch_api(doc, auth):
     url = DOCS_API.format(doc=doc)
     token = get_access_token(auth)
     try:
-        return json.loads(http_get(url, timeout=120,
-                                   headers={"Authorization": "Bearer " + token}))
+        text, _ = http_get(url, timeout=120,
+                           headers={"Authorization": "Bearer " + token})
+        return json.loads(text)
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", "replace")
         if e.code in (401, 403):
@@ -1313,7 +1359,7 @@ h1 { font-size: 26px; line-height: 1.3; margin: 4px 0 10px; font-weight: 400; }
 .doc li { margin: .25em 0; }
 .doc code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: .88em; background: var(--code-bg); padding: .1em .35em; border-radius: 4px; }
-.doc a { color: var(--accent) !important; }
+.doc a { color: var(--accent) !important; }
 .doc a span { color: inherit !important; }
 .doc a code { color: inherit; }
 .doc table { border-collapse: collapse; margin: 1em 0; max-width: 100%;

@@ -1474,7 +1474,8 @@ h1 { font-size: 26px; line-height: 1.3; margin: 4px 0 10px; font-weight: 400; }
 #search-results .sr mark, .doc mark {
   background: var(--mark-bg, rgba(255, 193, 7, .32)); color: inherit;
   border-radius: 3px; padding: 0 1px; }
-:root[data-theme="light"] .sr mark { background: #ffe58f; color: #392f00; }
+:root[data-theme="light"] .sr mark,
+:root[data-theme="light"] .doc mark { background: #ffe58f; color: #392f00; }
 
 .doc { font-size: 15px; line-height: 1.6; overflow-wrap: break-word; }
 /* anchor jumps land just below the sticky topbar instead of hidden under it */
@@ -1546,6 +1547,49 @@ footer { margin-top: 48px; font-size: 13px; color: var(--muted); }
 """
 
 APP_JS = """\
+(function () {
+  // in-page highlight: landing here with ?q=terms (from a search result
+  // click) marks every occurrence of the terms in the document text
+  var m = location.search.match(/[?&]q=([^&]+)/);
+  if (m) {
+    var terms = decodeURIComponent(m[1].replace(/\+/g, " ")).toLowerCase()
+      .split(/\s+/).filter(Boolean);
+    var root = document.querySelector(".content");
+    if (terms.length && root) {
+      var nodes = [];
+      var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+      while (walker.nextNode()) nodes.push(walker.currentNode);
+      for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        var txt = node.nodeValue;
+        if (!txt) continue;
+        var lower = txt.toLowerCase();
+        var hit = false;
+        for (var tk = 0; tk < terms.length; tk++) {
+          if (lower.indexOf(terms[tk]) !== -1) { hit = true; break; }
+        }
+        if (!hit) continue;
+        var frag = document.createDocumentFragment();
+        var pos = 0, len = txt.length;
+        while (pos < len) {
+          var best = -1, bl = 0;
+          for (tk = 0; tk < terms.length; tk++) {
+            var k = lower.indexOf(terms[tk], pos);
+            if (k >= 0 && (best < 0 || k < best)) { best = k; bl = terms[tk].length; }
+          }
+          if (best < 0) { frag.appendChild(document.createTextNode(txt.slice(pos))); break; }
+          if (best > pos) frag.appendChild(document.createTextNode(txt.slice(pos, best)));
+          var mk = document.createElement("mark");
+          mk.textContent = txt.slice(best, best + bl);
+          frag.appendChild(mk);
+          pos = best + bl;
+        }
+        node.parentNode.replaceChild(frag, node);
+      }
+    }
+  }
+})();
+
 (function () {
   "use strict";
   var data = null;
@@ -1723,7 +1767,8 @@ APP_JS = """\
         var a = document.createElement("a");
         a.className = "sr";
         var aid = anchorAt(s.full || "", s, tokens);
-        a.href = aid ? s.slug + ".html#" + aid : s.slug + ".html";
+        var qs = "?q=" + encodeURIComponent(input.value.trim());
+        a.href = s.slug + ".html" + qs + (aid ? "#" + aid : "");
         var t = document.createElement("span");
         t.className = "t";
         t.innerHTML = mark(s.title, tokens);

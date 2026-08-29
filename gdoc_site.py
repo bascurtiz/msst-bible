@@ -1457,7 +1457,13 @@ h1 { font-size: 26px; line-height: 1.3; margin: 4px 0 10px; font-weight: 400; }
 .meta { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
 .notice { background: var(--accent-soft); border-radius: 8px; padding: 10px 14px;
   font-size: 14px; margin: 0 0 26px; }
-#search-results { margin: 12px 0; }
+#search-backdrop { position: fixed; inset: 0; z-index: 40;
+  background: rgba(0, 0, 0, .4); }
+#search-results { position: fixed; z-index: 50; display: none;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, .35);
+  padding: 10px 12px; max-height: min(70vh, 620px); overflow-y: auto; }
 .sr-count { font-size: 13px; color: var(--muted); margin: 0 0 8px; }
 #search-results .sr { display: block; padding: 8px 12px; border: 1px solid var(--border);
   border-radius: 8px; margin-bottom: 8px; background: var(--bg); }
@@ -1615,10 +1621,12 @@ APP_JS = """\
   // --- search -------------------------------------------------------------
   var input = qs("#search");
   if (input) {
+    var backdrop = document.createElement("div");
+    backdrop.id = "search-backdrop";
+    document.body.appendChild(backdrop);
     var box = document.createElement("div");
     box.id = "search-results";
-    var host = qs("#search-host") || document.body;
-    host.insertBefore(box, host.firstChild);
+    document.body.appendChild(box);
 
     fetch("data.json").then(function (r) { return r.json(); }).then(function (d) {
       data = d;
@@ -1734,9 +1742,29 @@ APP_JS = """\
       });
     }
 
+    // --- results shown in a modal anchored under the search field --------
+    function positionPanel() {
+      var r = input.getBoundingClientRect();
+      var w = Math.max(r.width, 360);
+      w = Math.min(w, window.innerWidth - 24);
+      var left = Math.max(12, Math.min(r.left, window.innerWidth - w - 12));
+      box.style.left = left + "px";
+      box.style.top = (r.bottom + 8) + "px";
+      box.style.width = w + "px";
+    }
+    function showPanel() {
+      positionPanel();
+      box.style.display = "block";
+      backdrop.style.display = "block";
+    }
+    function hidePanel() {
+      box.style.display = "none";
+      backdrop.style.display = "none";
+    }
+
     function search() {
       var val = input.value.trim().toLowerCase();
-      if (!val || !data) { box.innerHTML = ""; return; }
+      if (!val || !data) { box.innerHTML = ""; hidePanel(); return; }
       tokens = val.split(/\s+/);
       var out = [];
       data.sections.forEach(function (s) {
@@ -1754,14 +1782,27 @@ APP_JS = """\
       var total = 0;
       top.forEach(function (s) { total += countTokens(s.full || "", tokens); });
       render(top, total);
+      showPanel();
     }
 
     input.addEventListener("input", search);
+    input.addEventListener("focus", function () {
+      if (input.value.trim() && data) showPanel();
+    });
+    backdrop.addEventListener("click", hidePanel);
+    document.addEventListener("click", function (e) {
+      if (box.style.display !== "none"
+          && !box.contains(e.target) && e.target !== input
+          && e.target !== backdrop) hidePanel();
+    });
+    window.addEventListener("resize", function () {
+      if (box.style.display !== "none") positionPanel();
+    });
     document.addEventListener("keydown", function (e) {
       if (e.key === "/" && document.activeElement !== input) {
         e.preventDefault(); input.focus();
       }
-      if (e.key === "Escape") { input.value = ""; search(); input.blur(); }
+      if (e.key === "Escape") { input.value = ""; search(); input.blur(); hidePanel(); }
     });
   }
 })();

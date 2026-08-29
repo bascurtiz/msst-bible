@@ -1457,7 +1457,7 @@ h1 { font-size: 26px; line-height: 1.3; margin: 4px 0 10px; font-weight: 400; }
 .meta { color: var(--muted); font-size: 14px; margin: 0 0 18px; }
 .notice { background: var(--accent-soft); border-radius: 8px; padding: 10px 14px;
   font-size: 14px; margin: 0 0 26px; }
-#search-backdrop { position: fixed; inset: 0; z-index: 40;
+#search-backdrop { position: fixed; inset: 0; z-index: 40; display: none;
   background: rgba(0, 0, 0, .4); }
 #search-results { position: fixed; z-index: 50; display: none;
   background: var(--bg); color: var(--fg);

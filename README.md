@@ -43,7 +43,7 @@ The site lives at `https://msst-bible.pages.dev` (a Cloudflare Pages project nam
    - `CLOUDFLARE_ACCOUNT_ID` = your account ID
 
 4. **Done!** The site will:
-   - Update every few minutes via GitHub Actions (the `schedule` in `.github/workflows/deploy.yml`)
+   - Update every hour via GitHub Actions (the `schedule` in `.github/workflows/deploy.yml`)
    - Deploy automatically on push or manual run
    - Be available at `https://msst-bible.pages.dev`
 

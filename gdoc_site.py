@@ -400,6 +400,51 @@ class Site:
             return self.resolve_url(raw[1])
         return None
 
+    def _norm_title(self, t):
+        return re.sub(r"\s+", " ", t or "").strip().lower()
+
+    def _build_section_title_index(self):
+        # heading title -> (slug, fragment) lazily, keyed on normalized text
+        if getattr(self, "_title_index", None) is not None:
+            return self._title_index
+        idx = {}
+        for s in self.sections:
+            # register the section page itself under its title
+            idx.setdefault(self._norm_title(s["title"]), (s["slug"], None))
+            for sub in s.get("subs", []):
+                if sub.get("id"):
+                    idx.setdefault(self._norm_title(sub["title"]),
+                                   (s["slug"], sub["id"]))
+            # demoted prose headings keep their anchors reachable too
+            for b in s["blocks"]:
+                if b["type"] == "para" and b.get("heading_id"):
+                    idx.setdefault(self._norm_title(text_of_runs(b["runs"])),
+                                   (s["slug"], b["heading_id"]))
+        self._title_index = idx
+        return idx
+
+    def resolve_stale_heading(self, hid, text):
+        """A heading link points to an id that no longer exists (the doc's
+        manually-maintained TOC is full of such stale links). Fall back to
+        the registered heading whose title matches the link's text, so the
+        entry still lands on the right section instead of the document top.
+        """
+        q = self._norm_title(text)
+        if not q:
+            return None
+        idx = self._build_section_title_index()
+        # exact title match first, then a generous prefix match
+        hit = idx.get(q)
+        if hit is None and len(q) >= 15:
+            for k, v in idx.items():
+                if k[:len(q)] == q or q[:len(k)] == k:
+                    hit = v
+                    break
+        if not hit:
+            return None
+        slug, frag = hit
+        return f"{slug}.html#{frag}" if frag else f"{slug}.html"
+
     def edit_url(self, section):
         tab = section["tab"]
         hid = section.get("heading_id")
@@ -445,6 +490,12 @@ class Site:
             if style:
                 t = f'<span style="{"; ".join(style)}">{t}</span>'
             href = self.resolve_run(r.get("link"))
+            if href == "index.html" and r.get("link") and r["link"][0] == "heading":
+                # stale manual-TOC links target an id that no longer exists;
+                # rescue them by matching the link's text to a live heading
+                alt = self.resolve_stale_heading(r["link"][1], r.get("text", ""))
+                if alt:
+                    href = alt
             if href:
                 t = f'<a href="{attr(href)}">{t}</a>'
             out.append(t)

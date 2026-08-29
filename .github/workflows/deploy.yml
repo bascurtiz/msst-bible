@@ -38,6 +38,17 @@ jobs:
             --base-url https://msst-bible.pages.dev/ \
             --out _site
 
+      # wrangler's `pages deploy` errors (code 8000007) if the project
+      # doesn't exist yet, so create it first. continue-on-error keeps the
+      # step harmless once the project already exists on later runs.
+      - name: Create Cloudflare Pages project (if missing)
+        uses: cloudflare/wrangler-action@v3
+        continue-on-error: true
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages project create ${{ env.CLOUDFLARE_PAGES_PROJECT }} --production-branch=main
+
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:

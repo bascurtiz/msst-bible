@@ -1765,7 +1765,7 @@ def render_section_page(site, i, sec):
     body.append(f'<h1>{esc(sec["title"])}</h1>')
     body.append(f'<p class="meta">Page {i + 1} of {total} · '
                 f'<a href="{attr(site.edit_url(sec))}" target="_blank" rel="noopener">'
-                f'Edit this page in Google Docs ↗</a></p>')
+                f'Open the original GDoc ↗</a></p>')
     # the page title is already shown as <h1>; skip the section's own
     # title heading block so it isn't repeated inside the body
     blocks = sec["blocks"]

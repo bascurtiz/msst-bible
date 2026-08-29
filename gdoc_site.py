@@ -774,7 +774,9 @@ def parse_css(css_text):
             continue
         cls = m.group(1)
         props = rules.setdefault(cls, {})
-        for pm in re.finditer(r"([a-zA-Z-]+)\s*:\s*([^;]+);", decl):
+        # Tolerate a missing trailing semicolon on a rule's final declaration
+        # (Google's export drops it, e.g. "text-decoration:line-through}").
+        for pm in re.finditer(r"([a-zA-Z-]+)\s*:\s*([^;}]+)", decl):
             props[pm.group(1).strip().lower()] = pm.group(2).strip()
     return rules
 

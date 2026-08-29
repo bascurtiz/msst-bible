@@ -1414,6 +1414,8 @@ h1 { font-size: 26px; line-height: 1.3; margin: 4px 0 10px; font-weight: 400; }
 #search-results .sr .sn { font-size: 13px; color: var(--muted); display: block; margin-top: 2px; }
 
 .doc { font-size: 15px; line-height: 1.6; overflow-wrap: break-word; }
+/* anchor jumps land just below the sticky topbar instead of hidden under it */
+.doc [id] { scroll-margin-top: 68px; }
 .doc h2 { font-size: 20px; margin: 1.6em 0 .6em; padding-top: .3em;
   border-bottom: 1px solid var(--border); font-weight: 600; }
 .doc h3 { font-size: 17px; margin: 1.4em 0 .5em; font-weight: 600; }

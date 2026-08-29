@@ -1412,6 +1412,10 @@ h1 { font-size: 26px; line-height: 1.3; margin: 4px 0 10px; font-weight: 400; }
 #search-results .sr .t { font-weight: 600; color: var(--fg); }
 #search-results .sr .tab { font-size: 12px; color: var(--muted); margin-left: 8px; }
 #search-results .sr .sn { font-size: 13px; color: var(--muted); display: block; margin-top: 2px; }
+#search-results .sr mark, .doc mark {
+  background: var(--mark-bg, rgba(255, 193, 7, .32)); color: inherit;
+  border-radius: 3px; padding: 0 1px; }
+:root[data-theme="light"] .sr mark { background: #ffe58f; color: #392f00; }
 
 .doc { font-size: 15px; line-height: 1.6; overflow-wrap: break-word; }
 /* anchor jumps land just below the sticky topbar instead of hidden under it */
@@ -1567,10 +1571,60 @@ APP_JS = """\
       data = d;
       d.sections.forEach(function (s) {
         var hay = (s.tabTitle + " " + s.title + " " +
-          (s.subs || []).map(function (x) { return x.title; }).join(" ") + " " + s.text).toLowerCase();
+          (s.subs || []).map(function (x) { return x.title; }).join(" ") + " "
+          + (s.full || s.text || "")).toLowerCase();
         s._hay = hay;
       });
     }).catch(function () {});
+
+    function escHtml(t) {
+      var d = document.createElement("div"); d.textContent = t; return d.innerHTML;
+    }
+    function mark(txt, tokens) {
+      var low = txt.toLowerCase();
+      var runs = [];
+      tokens.forEach(function (tk) {
+        if (!tk) return;
+        var i = low.indexOf(tk);
+        while (i >= 0) {
+          runs.push([i, i + tk.length]);
+          i = low.indexOf(tk, i + tk.length);
+        }
+      });
+      if (!runs.length) return escHtml(txt);
+      runs.sort(function (x, y) { return x[0] - y[0]; });
+      var merged = [runs[0].slice()];
+      for (var j = 1; j < runs.length; j++) {
+        var m = merged[merged.length - 1];
+        if (runs[j][0] <= m[1]) m[1] = Math.max(m[1], runs[j][1]);
+        else merged.push(runs[j].slice());
+      }
+      var out = "", p = 0;
+      merged.forEach(function (r) {
+        out += escHtml(txt.slice(p, r[0]));
+        out += "<mark>" + escHtml(txt.slice(r[0], r[1])) + "</mark>";
+        p = r[1];
+      });
+      return out + escHtml(txt.slice(p));
+    }
+    // a short snippet of fullText built around the first place a token occurs
+    function context(full) {
+      var lower = (full || "").toLowerCase();
+      var idx = -1;
+      (tokensOrEmpty()).forEach(function (tk) {
+        var k = lower.indexOf(tk);
+        if (k >= 0 && (idx < 0 || k < idx)) idx = k;
+      });
+      if (idx < 0) return mark((full || "").slice(0, 160), tokensOrEmpty());
+      var a = Math.max(0, idx - 70);
+      var b = Math.min(full.length, idx + 110);
+      return (a > 0 ? "…" : "") + mark(full.slice(a, b), tokensOrEmpty())
+        + (b < full.length ? "…" : "");
+    }
+    function tokensOrEmpty() {
+      return input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    }
+    var tokens = [];
 
     function render(list) {
       box.innerHTML = "";
@@ -1580,13 +1634,13 @@ APP_JS = """\
         a.href = s.slug + ".html";
         var t = document.createElement("span");
         t.className = "t";
-        t.textContent = s.title;
+        t.innerHTML = mark(s.title, tokens);
         var tab = document.createElement("span");
         tab.className = "tab";
         tab.textContent = s.tabTitle;
         var sn = document.createElement("span");
         sn.className = "sn";
-        sn.textContent = (s.text || "").slice(0, 160);
+        sn.innerHTML = context(s.full || "");
         a.appendChild(t); a.appendChild(tab); a.appendChild(sn);
         box.appendChild(a);
       });
@@ -1595,7 +1649,7 @@ APP_JS = """\
     function search() {
       var val = input.value.trim().toLowerCase();
       if (!val || !data) { box.innerHTML = ""; return; }
-      var tokens = val.split(/\\s+/);
+      tokens = val.split(/\s+/);
       var out = [];
       data.sections.forEach(function (s) {
         if (tokens.every(function (tk) { return s._hay.indexOf(tk) !== -1; })) {
@@ -1822,6 +1876,8 @@ def data_json(site):
                 "depth": s.get("depth", 0),
                 "subs": s.get("subs", []),
                 "text": s.get("text", ""),
+                # full plain text of the section, used as the search index
+                "full": s.get("full", ""),
             }
             for s in site.sections
         ],
@@ -1990,6 +2046,7 @@ def main(argv=None):
     site.base_url = args.base_url or ""
     for s in site.sections:
         s["text"] = snippet(s)
+        s["full"] = snippet(s, limit=None)  # full text for the search index
 
     t0 = time.time()
     write_site(site, args.out)

@@ -1472,10 +1472,8 @@ h1 { font-size: 26px; line-height: 1.3; margin: 4px 0 10px; font-weight: 400; }
 #search-results .sr .tab { font-size: 12px; color: var(--muted); margin-left: 8px; }
 #search-results .sr .sn { font-size: 13px; color: var(--muted); display: block; margin-top: 2px; }
 #search-results .sr mark, .doc mark {
-  background: var(--mark-bg, rgba(255, 193, 7, .32)); color: inherit;
+  background: #ffe58f; color: #392f00;
   border-radius: 3px; padding: 0 1px; }
-:root[data-theme="light"] .sr mark,
-:root[data-theme="light"] .doc mark { background: #ffe58f; color: #392f00; }
 
 .doc { font-size: 15px; line-height: 1.6; overflow-wrap: break-word; }
 /* anchor jumps land just below the sticky topbar instead of hidden under it */

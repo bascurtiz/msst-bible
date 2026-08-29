@@ -8,8 +8,8 @@ A fast, lightweight static site mirror of the [MSST Bible Google Doc](https://do
 - **Dark mode** — default theme with light/dark toggle
 - **Collapsible TOC** — sidebar groups expand/collapse
 - **Search** — client-side full-text search
-- **Auto-updates** — GitHub Actions regenerates every hour
-- **Free hosting** — GitHub Pages with HTTPS
+- **Auto-updates** — GitHub Actions regenerates on a schedule
+- **Free hosting** — Cloudflare Pages with HTTPS
 
 ## Quick Start
 
@@ -24,36 +24,36 @@ python serve.py --dir _site
 # Open http://localhost:8000
 ```
 
-### Deploy to GitHub Pages
+### Deploy to Cloudflare Pages
 
-1. **Create a GitHub repo**
-   ```bash
-   cd D:\github\msst-bible
-   git init
-   git add -A
-   git commit -m "Initial commit"
-   git remote add origin https://github.com/YOUR_USERNAME/msst-bible.git
-   git push -u origin master
-   ```
+The site lives at `https://msst-bible.pages.dev` (a Cloudflare Pages project named `msst-bible`). GitHub Actions builds it on a schedule and pushes the result to Cloudflare via Direct Upload.
 
-2. **Enable GitHub Pages**
-   - Go to your repo on GitHub
-   - Settings → Pages
-   - Source: **GitHub Actions**
-   - Save
+1. **Create the Cloudflare Pages project** (`msst-bible`)
+   - Cloudflare Dashboard → **Workers & Pages** → **Create application** → **Pages**
+   - Name it `msst-bible` → the site will be at `https://msst-bible.pages.dev`
 
-3. **Done!** The site will:
-   - Deploy automatically on first push
-   - Update every hour via GitHub Actions
-   - Be available at `https://YOUR_USERNAME.github.io/msst-bible/`
+2. **Create an API token**
+   - Cloudflare Dashboard → **My Profile** → **API Tokens** → **Create Token**
+   - Create a custom token with **Account → Cloudflare Pages → Edit**, scoped to your account
+   - Write down the token and your **Account ID** (Dashboard → right sidebar)
+
+3. **Add secrets to the GitHub repo**
+   - Repo → **Settings** → **Secrets and variables** → **Actions**
+   - `CLOUDFLARE_API_TOKEN` = the token from step 2
+   - `CLOUDFLARE_ACCOUNT_ID` = your account ID
+
+4. **Done!** The site will:
+   - Update every few minutes via GitHub Actions (the `schedule` in `.github/workflows/deploy.yml`)
+   - Deploy automatically on push or manual run
+   - Be available at `https://msst-bible.pages.dev`
 
 ## How It Works
 
-1. GitHub Actions runs every hour
+1. GitHub Actions runs on a schedule
 2. Checks out this repo
 3. Runs `gdoc_site.py` to fetch the Google Doc
 4. Generates static HTML pages
-5. Deploys to GitHub Pages
+5. Deploys to Cloudflare Pages (`msst-bible.pages.dev`)
 
 ## Local Development
 

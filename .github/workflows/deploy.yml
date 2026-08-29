@@ -8,16 +8,20 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
+
+env:
+  CLOUDFLARE_PAGES_PROJECT: msst-bible
 
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://msst-bible.pages.dev
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,20 +35,12 @@ jobs:
         run: |
           python gdoc_site.py \
             --doc 17fjNvJzj8ZGSer7c7OFe_CNfUKbAxEh_OBv94ZdRG5c \
+            --base-url https://msst-bible.pages.dev/ \
             --out _site
 
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
         with:
-          path: _site
-
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy _site --project-name=${{ env.CLOUDFLARE_PAGES_PROJECT }}

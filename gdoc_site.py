@@ -157,7 +157,11 @@ def parse_api_link(link):
     return None
 
 
-CHUNK_THRESHOLD = 120_000  # estimated HTML bytes per page before splitting
+# Render each top-level section as one long, continuous page instead of
+# splitting oversized sections into many sub-pages. Kept well above even the
+# largest section in a typical mirror (the biggest in this doc is ~0.5 MB),
+# so sections only ever split if a document has truly pathological gobs.
+CHUNK_THRESHOLD = 5_000_000  # estimated HTML bytes per page before splitting
 
 
 def _runs_cost(runs):

@@ -4,7 +4,7 @@ A fast, lightweight static site mirror of the [MSST Bible Google Doc](https://do
 
 ## Features
 
-- **Fast loading** — 66 pages instead of one 13MB document
+- **Fast loading** — one long, scrollable page per section instead of one 13MB document
 - **Dark mode** — default theme with light/dark toggle
 - **Collapsible TOC** — sidebar groups expand/collapse
 - **Search** — client-side full-text search

@@ -1,0 +1,2 @@
+# No third-party dependencies — this project uses only the Python standard
+# library. Just install Python 3.10+ and you're good to go.

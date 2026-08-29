@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gdoc-mirror"
+version = "1.0.0"
+description = "Turn a big Google Doc into a fast, tiny static site"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []
+
+[project.scripts]
+gdoc-site = "gdoc_site:main"
+
+[tool.setuptools]
+py-modules = ["gdoc_site"]

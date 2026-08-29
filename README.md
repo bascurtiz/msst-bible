@@ -74,11 +74,18 @@ The site lives at `https://msst-bible.pages.dev` (a Cloudflare Pages project nam
 
 ## Local Development
 
-```bash
-# Build the site
-python gdoc_site.py --doc 17fjNvJzj8ZGSer7c7OFe_CNfUKbAxEh_OBv94ZdRG5c --out _site
+No third-party dependencies — just Python 3.10+ (`requirements.txt` exists
+only to say so). Run the scripts directly, or install as an editable package
+for a `gdoc-site` command:
 
-# Preview locally
+```bash
+# Option A: run the scripts directly
+python gdoc_site.py --doc 17fjNvJzj8ZGSer7c7OFe_CNfUKbAxEh_OBv94ZdRG5c --out _site
+python serve.py --dir _site
+
+# Option B: install and use the command
+pip install -e .
+gdoc-site --doc 17fjNvJzj8ZGSer7c7OFe_CNfUKbAxEh_OBv94ZdRG5c --out _site
 python serve.py --dir _site
 ```
 
@@ -124,6 +131,8 @@ msst-bible/
 ├── gdoc_site.py            # Main generator script
 ├── serve.py                # Local preview server
 ├── local_build.bat         # Windows quick build script
+├── requirements.txt        # No dependencies — stdlib only
+├── pyproject.toml          # Package metadata + optional `gdoc-site` command
 └── README.md               # This file
 ```
 

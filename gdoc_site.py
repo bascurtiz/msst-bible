@@ -1458,8 +1458,10 @@ h1 { font-size: 26px; line-height: 1.3; margin: 4px 0 10px; font-weight: 400; }
 .notice { background: var(--accent-soft); border-radius: 8px; padding: 10px 14px;
   font-size: 14px; margin: 0 0 26px; }
 #search-results { margin: 12px 0; }
+.sr-count { font-size: 13px; color: var(--muted); margin: 0 0 8px; }
 #search-results .sr { display: block; padding: 8px 12px; border: 1px solid var(--border);
   border-radius: 8px; margin-bottom: 8px; background: var(--bg); }
+#search-results .sr .sr-hits { font-size: 12px; color: var(--muted); margin-left: 8px; }
 #search-results .sr .t { font-weight: 600; color: var(--fg); }
 #search-results .sr .tab { font-size: 12px; color: var(--muted); margin-left: 8px; }
 #search-results .sr .sn { font-size: 13px; color: var(--muted); display: block; margin-top: 2px; }
@@ -1676,23 +1678,58 @@ APP_JS = """\
       return input.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
     }
     var tokens = [];
+    // total occurrences of every token in a section's full text
+    function countTokens(full, tks) {
+      var lo = (full || "").toLowerCase(), total = 0;
+      tks.forEach(function (tk) {
+        if (!tk) return;
+        var i = 0, tl = tk.length;
+        while ((i = lo.indexOf(tk, i)) !== -1) { total++; i += tl; }
+      });
+      return total;
+    }
+    // id of the sub-heading under which the first token match falls
+    function anchorAt(full, s, tks) {
+      var lo = (full || "").toLowerCase(), idx = -1;
+      tks.forEach(function (tk) {
+        if (!tk) return;
+        var k = lo.indexOf(tk);
+        if (k >= 0 && (idx < 0 || k < idx)) idx = k;
+      });
+      if (idx < 0) return null;
+      var best = null;
+      (s.anchors || []).forEach(function (a) { if (a.o <= idx) best = a.id; });
+      return best;
+    }
 
-    function render(list) {
+    function render(list, totalHits) {
       box.innerHTML = "";
+      var banner = document.createElement("div");
+      banner.className = "sr-count";
+      banner.textContent = list.length
+        ? totalHits + " hit" + (totalHits === 1 ? "" : "s") + " in "
+          + list.length + " section" + (list.length === 1 ? "" : "s")
+        : "No matches";
+      box.appendChild(banner);
       list.forEach(function (s) {
         var a = document.createElement("a");
         a.className = "sr";
-        a.href = s.slug + ".html";
+        var aid = anchorAt(s.full || "", s, tokens);
+        a.href = aid ? s.slug + ".html#" + aid : s.slug + ".html";
         var t = document.createElement("span");
         t.className = "t";
         t.innerHTML = mark(s.title, tokens);
         var tab = document.createElement("span");
         tab.className = "tab";
         tab.textContent = s.tabTitle;
+        var hits = countTokens(s.full || "", tokens);
+        var cnt = document.createElement("span");
+        cnt.className = "sr-hits";
+        cnt.textContent = hits + (hits === 1 ? " hit" : " hits");
         var sn = document.createElement("span");
         sn.className = "sn";
         sn.innerHTML = context(s.full || "");
-        a.appendChild(t); a.appendChild(tab); a.appendChild(sn);
+        a.appendChild(t); a.appendChild(tab); a.appendChild(cnt); a.appendChild(sn);
         box.appendChild(a);
       });
     }
@@ -1713,7 +1750,10 @@ APP_JS = """\
         }
       });
       out.sort(function (a, b) { return a.score - b.score; });
-      render(out.slice(0, 25).map(function (o) { return o.s; }));
+      var top = out.slice(0, 25).map(function (o) { return o.s; });
+      var total = 0;
+      top.forEach(function (s) { total += countTokens(s.full || "", tokens); });
+      render(top, total);
     }
 
     input.addEventListener("input", search);
@@ -1830,6 +1870,51 @@ def snippet(section, limit=400):
     return " ".join(parts)[:limit]
 
 
+def section_full_text(section):
+    """Full plain text of a section, plus the character offset where each
+    sub-heading starts. Search uses this to deep-link a hit to the heading
+    it falls under instead of just the top of the section page."""
+    segs = []
+    heads = []  # (index into segs, heading id, title)
+
+    def add(t, hid=None, htitle=None):
+        t = (t or "").strip()
+        if not t:
+            return
+        segs.append(t)
+        if hid:
+            heads.append((len(segs) - 1, hid, htitle))
+
+    def walk(blocks):
+        for b in blocks:
+            t = b["type"]
+            if t == "para":
+                add(text_of_runs(b.get("runs", [])))
+            elif t == "heading":
+                ht = text_of_runs(b.get("runs", []))
+                add(ht, b.get("heading_id"), ht)
+            elif t == "list":
+                for it in b.get("items", []):
+                    add(text_of_runs(it.get("runs", [])))
+            elif t == "table":
+                for row in b.get("rows", []):
+                    for cell in row:
+                        walk(cell)
+            elif t == "toc":
+                walk(b.get("blocks", []))
+            elif t == "html":
+                add(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", b["html"])).strip())
+
+    walk(section["blocks"])
+    text = " ".join(segs)
+    anchors = [
+        {"o": sum(len(segs[j]) for j in range(idx)) + idx,
+         "id": aid, "t": htitle}
+        for idx, aid, htitle in heads
+    ]
+    return text, anchors
+
+
 # ---------------------------------------------------------------------------
 # site writing
 # ---------------------------------------------------------------------------
@@ -1927,8 +2012,9 @@ def data_json(site):
                 "depth": s.get("depth", 0),
                 "subs": s.get("subs", []),
                 "text": s.get("text", ""),
-                # full plain text of the section, used as the search index
+                # full plain text + sub-heading offsets, used as the search index
                 "full": s.get("full", ""),
+                "anchors": s.get("anchors", []),
             }
             for s in site.sections
         ],
@@ -2097,7 +2183,7 @@ def main(argv=None):
     site.base_url = args.base_url or ""
     for s in site.sections:
         s["text"] = snippet(s)
-        s["full"] = snippet(s, limit=None)  # full text for the search index
+        s["full"], s["anchors"] = section_full_text(s)
 
     t0 = time.time()
     write_site(site, args.out)

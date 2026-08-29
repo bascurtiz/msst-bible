@@ -342,6 +342,12 @@ class Site:
                 if sub.get("id"):
                     self.heading_map.setdefault(sub["id"], s)
                     self.heading_tab_map.setdefault((s["tab"], sub["id"]), s)
+            # demoted prose headings keep their anchors reachable
+            for b in s["blocks"]:
+                if b["type"] == "para" and b.get("heading_id"):
+                    self.heading_map.setdefault(b["heading_id"], s)
+                    self.heading_tab_map.setdefault(
+                        (s["tab"], b["heading_id"]), s)
 
     # -- link resolution ----------------------------------------------------
 
@@ -449,7 +455,9 @@ class Site:
         for b in blocks:
             t = b["type"]
             if t == "para":
-                out.append(f"<p>{self.render_runs(b['runs'])}</p>")
+                # demoted prose headings keep their anchor id
+                hid = f' id="{attr(b["heading_id"])}"' if b.get("heading_id") else ""
+                out.append(f"<p{hid}>{self.render_runs(b['runs'])}</p>")
             elif t == "heading":
                 lvl = min(max(b["level"], 1), 6)
                 hid = f' id="{attr(b["heading_id"])}"' if b.get("heading_id") else ""
@@ -665,6 +673,45 @@ def parse_paragraph(p, ctx):
     return {"type": "para", "runs": runs}
 
 
+# A heading paragraph whose first line is this long is body prose that was
+# typed into a heading style (Google Docs keeps it bold as part of the
+# heading). Real titles are short; long first lines are demoted to plain
+# paragraphs. First lines starting with "___" are this doc's decorative
+# title convention and are treated as intentional headings.
+HEADING_PROSE_LEN = 80
+
+
+def normalize_heading(b):
+    """Normalize a heading block from either source.
+
+    1. A heading whose first line is body-length prose (e.g. a whole
+       sentence typed into Heading 5 with shift+enter) is demoted to a plain
+       paragraph. Its anchor id is kept so internal links keep working.
+    2. A real heading with extra lines after it (shift+enter inside the
+       heading) is split: the first line stays the heading, the rest becomes
+       a body paragraph (it would otherwise render bold as part of the
+       heading).
+    """
+    runs = b.get("runs", [])
+    first = []
+    for r in runs:
+        if r.get("br"):
+            break
+        first.append(r.get("text", ""))
+    fl = "".join(first).strip()
+    if len(fl) >= HEADING_PROSE_LEN and not fl.startswith("___"):
+        return [{"type": "para", "heading_id": b.get("heading_id"),
+                 "runs": runs}]
+    for i, r in enumerate(runs):
+        if r.get("br"):
+            body = [x for x in runs[i + 1:] if not x.get("br")]
+            if not body:
+                break  # nothing but line breaks after: heading stands alone
+            return [dict(b, runs=runs[:i]),
+                    {"type": "para", "runs": body}]
+    return [b]
+
+
 def get_image_uri(ctx, oid):
     io = (ctx.get("inline_objects") or {}).get(oid) or {}
     emb = (io.get("inlineObjectProperties") or {}).get("embeddedObject") or {}
@@ -689,7 +736,7 @@ def walk_elements(content, ctx):
                 pending.append(b)
             else:
                 flush_list()
-                blocks.append(b)
+                blocks.extend(normalize_heading(b))
         elif "table" in el:
             flush_list()
             blocks.append({"type": "table", "rows": parse_table(el["table"], ctx)})
@@ -877,8 +924,9 @@ class ExportParser(HTMLParser):
         self.inline = []
         if self.heading is not None:
             lvl, hid = self.heading
-            self.blocks.append({"type": "heading", "level": lvl,
-                                "heading_id": hid, "runs": runs})
+            b = {"type": "heading", "level": lvl,
+                 "heading_id": hid, "runs": runs}
+            self.blocks.extend(normalize_heading(b))
         elif self.table is not None:
             self.table_cell.append({"type": "para", "runs": runs})
         elif self.li is not None:

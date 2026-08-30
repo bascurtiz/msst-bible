@@ -1453,7 +1453,7 @@ a:hover { text-decoration: underline; }
   scrollbar-width: thin;
   scrollbar-color: var(--scroll-thumb) var(--scroll-track);
 }
-.sidebar::-webkit-scrollbar { width: 14px; }
+.sidebar::-webkit-scrollbar { width: 13px; }
 .sidebar::-webkit-scrollbar-track { background: var(--scroll-track); }
 .sidebar::-webkit-scrollbar-thumb {
   background: var(--scroll-thumb); border-radius: 6px;
@@ -1461,14 +1461,16 @@ a:hover { text-decoration: underline; }
 .sidebar::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
 
 /* main document scrollbar (the window scroll), same theme styling */
-html { scrollbar-width: thin;
+html, body { scrollbar-width: auto;
   scrollbar-color: var(--scroll-thumb) var(--scroll-track); }
-html::-webkit-scrollbar { width: 16px; }
-html::-webkit-scrollbar-track { background: var(--scroll-track); }
-html::-webkit-scrollbar-thumb {
-  background: var(--scroll-thumb); border-radius: 6px;
+html::-webkit-scrollbar, body::-webkit-scrollbar { width: 13px; }
+html::-webkit-scrollbar-track, body::-webkit-scrollbar-track {
+  background: var(--scroll-track); }
+html::-webkit-scrollbar-thumb, body::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb); border-radius: 8px;
   border: 2px solid var(--bg); }
-html::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
+html::-webkit-scrollbar-thumb:hover, body::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover); }
 .sidebar-brand { display: block; font-weight: 700; margin: 4px 8px 10px; color: var(--fg); }
 .tab-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 4px 12px; }
 .chip { font-size: 13px; padding: 3px 10px; border: 1px solid var(--border);

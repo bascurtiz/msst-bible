@@ -1918,7 +1918,6 @@ def sidebar_html(site, active_slug=None):
         if s.get("parent"):
             children.setdefault(s["parent"], []).append(s)
     p = ['<div class="sidebar-inner">']
-    p.append(f'<a class="sidebar-brand" href="index.html">{esc(site.title)}</a>')
     if len(site.tabs) > 1:
         p.append('<div class="tab-chips">')
         for t in site.tabs:
@@ -1930,7 +1929,10 @@ def sidebar_html(site, active_slug=None):
                  if s["tab"] == t["id"] and not s.get("parent")]
         if not roots:
             continue
-        p.append(f'<li class="toc-group"><span class="toc-tab">{esc(t["title"])}</span><ul>')
+        # The first tab corresponds to the front/index page, so label its TOC
+        # group INDEX instead of repeating the site title.
+        label = "INDEX" if t is site.tabs[0] else t["title"]
+        p.append(f'<li class="toc-group"><span class="toc-tab">{esc(label)}</span><ul>')
         for s in roots:
             cls = ' current' if s["slug"] == active_slug else ""
             link = (f'<a class="toc-section{cls}" href="{s["slug"]}.html"'

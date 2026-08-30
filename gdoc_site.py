@@ -1997,7 +1997,6 @@ def sidebar_html(site, active_slug=None):
         p.append('</ul></li>')
     p.append('</ul>')
     p.append(f'<div class="sidebar-foot"><a href="index.html">Index</a> · '
-             f'<a href="outline.html">Outline</a> · '
              f'<a href="https://docs.google.com/document/d/{attr(site.doc_id)}/edit">Google Doc ↗</a></div>')
     p.append('</div>')
     return "".join(p)
@@ -2081,19 +2080,18 @@ def render_index(site):
     body.append('<div class="doc">')
     body.append(site.render_blocks(blocks))
     body.append('</div>')
-    body.append('<div class="index-link"><a href="contents.html">Full table of contents →</a> · '
-                 '<a href="outline.html">Document outline →</a></div>')
+    body.append('<div class="index-link"><a href="contents.html">Full table of contents →</a></div>')
     return page_template(site, site.title, sidebar_html(site), chr(10).join(body), None)
 
 
-def render_outline(site):
-    """A dedicated full-outline page mirroring the Google Doc's left
-    "Document tabs" panel: every heading, nested, in reading order."""
+def render_contents(site):
+    """The index page: the full document outline (every heading, nested),
+    mirroring the Google Doc's "Document tabs" panel."""
     children = {}
     for s in site.sections:
         if s.get("parent"):
             children.setdefault(s["parent"], []).append(s)
-    body = ['<h1>Document outline</h1>']
+    body = ['<h1>Contents</h1>']
     body.append('<p class="outline-hint">Every heading in the document, in reading '
                 'order. Expand a group to reveal its sub-headings.</p>')
     body.append('<ul class="toc toc-full">')
@@ -2109,47 +2107,20 @@ def render_outline(site):
         for s in roots:
             link = (f'<a class="toc-section" href="{s["slug"]}.html">'
                     f'{esc(s["title"])}</a>')
-            inner = []
+            inner = _render_toc_nodes(_sub_tree(s.get("subs", [])), s["slug"])
             for k in children.get(s["slug"], []):
-                inner.append(f'<li><a href="{k["slug"]}.html">{esc(k["title"])}</a></li>')
-            inner.append(_render_toc_nodes(_sub_tree(s.get("subs", [])), s["slug"]))
-            if inner and any(x.strip() for x in inner):
+                inner = f'<li><a href="{k["slug"]}.html">{esc(k["title"])}</a></li>' + inner
+            if inner.strip():
                 body.append('<li class="toc-item"><div class="toc-head">'
                             '<button class="toc-caret open" type="button" '
                             'aria-label="Toggle sub-headings">▸</button>'
-                            f'{link}</div><ul class="toc-subs open">'
-                            f'{chr(10).join(inner)}</ul></li>')
+                            f'{link}</div><ul class="toc-subs open">{inner}</ul></li>')
             else:
                 body.append(f'<li class="toc-item">{link}</li>')
         if multi:
             body.append('</ul></li>')
     body.append('</ul>')
-    return page_template(site, f"Outline — {site.title}", sidebar_html(site),
-                         "\n".join(body), None)
-
-
-def render_contents(site):
-    body = ['<h1>Contents</h1>']
-    children = {}
-    for s in site.sections:
-        if s.get("parent"):
-            children.setdefault(s["parent"], []).append(s)
-    for t in site.tabs:
-        roots = [s for s in site.sections
-                 if s["tab"] == t["id"] and not s.get("parent")]
-        if not roots:
-            continue
-        body.append('<div class="section-list">')
-        for s in roots:
-            body.append(f'<a class="section-card" href="{s["slug"]}.html" title="{attr(s["title"])}"><span class="t">{esc(s["title"])}</span></a>')
-            kids = children.get(s["slug"], [])
-            if kids:
-                body.append('<div class="card-children">')
-                for k in kids:
-                    body.append(f'<a href="{k["slug"]}.html">{esc(k["title"])}</a>')
-                body.append('</div>')
-        body.append('</div>')
-    return page_template(site, site.title, sidebar_html(site), chr(10).join(body), None)
+    return page_template(site, site.title, sidebar_html(site), "\n".join(body), None)
 
 
 def render_section_page(site, i, sec):
@@ -2290,8 +2261,6 @@ def write_site(site, out):
         f.write(render_index(site))
     with open(os.path.join(out, "contents.html"), "w", encoding="utf-8") as f:
         f.write(render_contents(site))
-    with open(os.path.join(out, "outline.html"), "w", encoding="utf-8") as f:
-        f.write(render_outline(site))
     for i, sec in enumerate(site.sections):
         with open(os.path.join(out, f"{sec['slug']}.html"), "w", encoding="utf-8") as f:
             f.write(render_section_page(site, i, sec))

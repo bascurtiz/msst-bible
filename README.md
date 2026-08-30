@@ -8,7 +8,7 @@ A fast, lightweight static site mirror of the [MSST Bible Google Doc](https://do
 - **Dark mode** — default theme with light/dark toggle
 - **Collapsible TOC** — sidebar groups expand/collapse
 - **Search** — client-side full-text search
-- **Auto-updates** — GitHub Actions regenerates on a schedule
+- **Auto-updates** — a Cloudflare Worker cron regenerates on a schedule
 - **Free hosting** — Cloudflare Pages with HTTPS
 
 ## Run your own mirror
@@ -42,7 +42,7 @@ python serve.py --dir _site
 
 ### Deploy to Cloudflare Pages
 
-The site lives at `https://msst-bible.pages.dev` (a Cloudflare Pages project named `msst-bible`). GitHub Actions builds it on a schedule and pushes the result to Cloudflare via Direct Upload.
+The site lives at `https://msst-bible.pages.dev` (a Cloudflare Pages project named `msst-bible`). A Cloudflare Worker cron fires the GitHub Actions workflow, which builds the site and pushes it to Cloudflare via Direct Upload.
 
 1. **Pick a project name**
    - The default is `msst-bible` (set as `CLOUDFLARE_PAGES_PROJECT` in `.github/workflows/deploy.yml`).
@@ -60,17 +60,48 @@ The site lives at `https://msst-bible.pages.dev` (a Cloudflare Pages project nam
    - `CLOUDFLARE_ACCOUNT_ID` = your account ID
 
 4. **Done!** The site will:
-   - Update every hour via GitHub Actions (the `schedule` in `.github/workflows/deploy.yml`)
+   - Update every 15 minutes via the Cloudflare Worker cron (see the next section)
    - Redeploy on demand via the **Run workflow** button
    - Be available at `https://msst-bible.pages.dev`
 
+## Cloudflare Worker timer (recommended)
+
+GitHub Actions' `schedule` is best-effort: runs can be delayed by hours or
+dropped under load. To refresh dependably every 15 minutes, a tiny scheduled
+**Cloudflare Worker** calls the `workflow_dispatch` API on the same cadence.
+The build + deploy still runs in GitHub Actions (only the *timer* moves to
+Cloudflare's dependable scheduler).
+
+The worker is `workers/msst-bible-tick/`. To set it up once:
+
+1. **Create a GitHub token** — GitHub → Settings → Developer settings →
+   Personal access tokens → Fine-grained tokens. Repository access:
+   `bascurtiz/msst-bible`, **Permissions → Actions → Read and write**.
+   Copy the token.
+2. **Create the Worker** (Cloudflare Dashboard → Workers & Pages → Create →
+   Worker, name `msst-bible-tick`), then either:
+   - **Dashboard:** paste `cron-trigger.js` into the editor, add a Cron
+     Trigger `*/15 * * * *`, a **secret** `GITHUB_TOKEN` = the token from step
+     1, and a **variable** `DISPATCH_URL` = `https://api.github.com/repos/bascurtiz/msst-bible/actions/workflows/deploy.yml/dispatches`, then **Deploy**.
+   - **CLI:** `cd workers/msst-bible-tick && wrangler login && wrangler deploy`
+     then `wrangler secret put GITHUB_TOKEN`.
+3. **Test it** — `curl https://msst-bible-tick.<your-subdomain>.workers.dev/trigger`
+   should start a deploy run (you'll see it appear on the Actions tab). The
+   `/trigger` route fires the workflow on demand; otherwise the cron handles it.
+
+Once confirmed, you can drop the flaky `schedule:` block from
+`.github/workflows/deploy.yml` so the Worker cron is the only timer (keeps the
+`workflow_dispatch` trigger, which the Worker relies on). Optionally keep it as
+a fallback — an occasional double-deploy is harmless (the `concurrency` group
+runs them one at a time).
+
 ## How It Works
 
-1. GitHub Actions runs on a schedule
-2. Checks out this repo
-3. Runs `gdoc_site.py` to fetch the Google Doc
-4. Generates static HTML pages
-5. Deploys to Cloudflare Pages (`msst-bible.pages.dev`)
+1. A Cloudflare Worker cron fires every 15 minutes
+2. Calls GitHub's `workflow_dispatch` to start the deploy workflow
+3. The workflow checks out this repo and runs `gdoc_site.py`
+4. The script fetches the Google Doc and generates static HTML
+5. The result deploys to Cloudflare Pages (`msst-bible.pages.dev`)
 
 ## Local Development
 
@@ -91,22 +122,17 @@ python serve.py --dir _site
 
 ## Configuration
 
-### Change update frequency
+### Change update frequency (Cloudflare Worker cron)
 
-Edit `.github/workflows/deploy.yml`:
+The refresh cadence lives in `workers/msst-bible-tick/wrangler.toml`:
 
-```yaml
-on:
-  schedule:
-    # Every hour (default)
-    - cron: '0 * * * *'
-    
-    # Every 6 hours
-    # - cron: '0 */6 * * *'
-    
-    # Daily at 3 AM
-    # - cron: '0 3 * * *'
+```toml
+[[triggers]]
+crons = ["*/15 * * * *"]   # every 15 minutes (Cloudflare, dependable)
 ```
+
+Change the cron (e.g. `["0 * * * *"]` for hourly, `["0 */6 * * *"]` for
+six-hourly) and redeploy the worker (`wrangler deploy` or Dashboard → save).
 
 ### Use a different Google Doc
 
@@ -133,6 +159,10 @@ msst-bible/
 ├── local_build.bat         # Windows quick build script
 ├── requirements.txt        # No dependencies — stdlib only
 ├── pyproject.toml          # Package metadata + optional `gdoc-site` command
+├── workers/
+│   └── msst-bible-tick/    # Scheduled Cloudflare Worker timer (deploys on cron)
+│       ├── cron-trigger.js # Worker: pokes workflow_dispatch
+│       └── wrangler.toml   # Cron trigger + bindings
 └── README.md               # This file
 ```
 

@@ -1,0 +1,13 @@
+name = "msst-bible-tick"
+main = "cron-trigger.js"
+compatibility_date = "2024-11-01"
+
+# Trigger the deploy every 15 minutes on Cloudflare's dependable scheduler.
+# (Cloudflare cron supports minute-level granularity and is far more reliable
+# than GitHub Actions' best-effort `schedule` events.)
+[[triggers]]
+crons = ["*/15 * * * *"]
+
+[vars]
+# Endpoint that fires the existing deploy.yml workflow.
+DISPATCH_URL = "https://api.github.com/repos/bascurtiz/msst-bible/actions/workflows/deploy.yml/dispatches"

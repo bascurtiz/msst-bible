@@ -39,6 +39,12 @@ import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
 
+# Google Search Console verification. Add a URL-prefix property for
+# https://msst-bible.pages.dev/ and paste the "HTML tag" content value here
+# (NOT the DNS TXT value — pages.dev DNS is owned by Cloudflare, so the DNS
+# method can't be used). Empty = no tag emitted.
+GSC_VERIFICATION = ""
+
 DOCS_API = "https://docs.googleapis.com/v1/documents/{doc}?includeTabsContent=true"
 EXPORT_URL = "https://docs.google.com/document/d/{doc}/export?format=html"
 USER_AGENT = "Mozilla/5.0 (gdoc-site mirror generator)"
@@ -1932,6 +1938,8 @@ def page_template(site, title, sidebar, body, active_slug):
     meta = f"{len(site.sections)} sections · generated {site.generated}"
     feed_link = ('<link rel="alternate" type="application/rss+xml" title="RSS feed" '
                  'href="feed.xml">\n') if getattr(site, "base_url", "") else ""
+    gsc_meta = (f'<meta name="google-site-verification" '
+                f'content="{GSC_VERIFICATION}">\n') if GSC_VERIFICATION else ""
     apple_icon = ('<link rel="apple-touch-icon" href="favicon.png">\n'
                   if getattr(site, "apple_icon", False) else "")
     return f"""<!doctype html>
@@ -1940,7 +1948,7 @@ def page_template(site, title, sidebar, body, active_slug):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(title)}</title>
-{feed_link}<link rel="icon" href="favicon.ico">
+{feed_link}{gsc_meta}<link rel="icon" href="favicon.ico">
 {apple_icon}<link rel="stylesheet" href="assets/style.css">
 <script>(function(){{var t;try{{t=localStorage.getItem("doc-theme");}}catch(e){{}}document.documentElement.setAttribute("data-theme",t||"dark");}})();</script>
 </head>
@@ -2292,6 +2300,11 @@ def write_site(site, out):
         src = os.path.join(here, fn)
         if os.path.exists(src):
             shutil.copy(src, os.path.join(out, fn))
+    # Copy the Google Search Console HTML-file verification token (if present),
+    # so it stays on the site root across every rebuild/deploy.
+    gsc_file = os.path.join(here, "google590856c13a26a9ec.html")
+    if os.path.exists(gsc_file):
+        shutil.copy(gsc_file, os.path.join(out, "google590856c13a26a9ec.html"))
     # Only link the high-res PNG icon when it's actually available.
     site.apple_icon = os.path.exists(os.path.join(here, "favicon.png"))
     with open(os.path.join(out, "assets", "style.css"), "w", encoding="utf-8") as f:

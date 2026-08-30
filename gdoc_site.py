@@ -91,6 +91,17 @@ def is_decorative_heading(t):
     return False
 
 
+# Leading marker characters some doc headings begin with ("- ", "> ", ".",
+# "- For…", etc.) in the source doc. They're not part of the real tab title,
+# so strip them from the label shown in the navigation outline/sidebar.
+_NAV_MARK = re.compile(r"^[\s>#*•·\-\u2013\u2014\.]+")
+
+
+def clean_nav_title(t):
+    t = (t or "").strip()
+    return _NAV_MARK.sub("", t).strip()
+
+
 def slugify(t):
     t = t.lower()
     t = re.sub(r"[^\w\s-]", "", t, flags=re.UNICODE)
@@ -1964,11 +1975,11 @@ def _render_toc_nodes(nodes, slug):
             out.append('<li class="toc-item"><div class="toc-head">'
                        '<button class="toc-caret open" type="button" '
                        'aria-label="Toggle sub-headings">▸</button>'
-                       f'<a href="{href}">{esc(n["title"])}</a></div>')
+                       f'<a href="{href}">{esc(clean_nav_title(n["title"]))}</a></div>')
             out.append(f'<ul class="toc-subs open">'
                        f'{_render_toc_nodes(n["children"], slug)}</ul></li>')
         else:
-            out.append(f'<li><a href="{href}">{esc(n["title"])}</a></li>')
+            out.append(f'<li><a href="{href}">{esc(clean_nav_title(n["title"]))}</a></li>')
     return "".join(out)
 
 
@@ -1996,7 +2007,7 @@ def sidebar_html(site, active_slug=None):
         for s in roots:
             cls = ' current' if s["slug"] == active_slug else ""
             link = (f'<a class="toc-section{cls}" href="{s["slug"]}.html"'
-                     f'>{esc(s["title"])}</a>')
+                     f'>{esc(clean_nav_title(s["title"]))}</a>')
             kids = children.get(s["slug"], [])
             subs = s.get("subs", [])
             if kids or subs:
@@ -2012,7 +2023,7 @@ def sidebar_html(site, active_slug=None):
                 for k in kids:
                     ccls = ' current' if k["slug"] == active_slug else ""
                     p.append(f'<li><a class="toc-sub{ccls}" href="{k["slug"]}.html"'
-                             f'>{esc(k["title"])}</a></li>')
+                             f'>{esc(clean_nav_title(k["title"]))}</a></li>')
                 p.append(_render_toc_nodes(_sub_tree(subs), s["slug"]))
                 p.append('</ul></li>')
             else:
@@ -2129,10 +2140,11 @@ def render_contents(site):
                         f'{esc(t["title"])}</span><ul class="toc-subs open">')
         for s in roots:
             link = (f'<a class="toc-section" href="{s["slug"]}.html">'
-                    f'{esc(s["title"])}</a>')
+                    f'{esc(clean_nav_title(s["title"]))}</a>')
             inner = _render_toc_nodes(_sub_tree(s.get("subs", [])), s["slug"])
             for k in children.get(s["slug"], []):
-                inner = f'<li><a href="{k["slug"]}.html">{esc(k["title"])}</a></li>' + inner
+                inner = (f'<li><a href="{k["slug"]}.html">'
+                         f'{esc(clean_nav_title(k["title"]))}</a></li>' + inner)
             if inner.strip():
                 body.append('<li class="toc-item"><div class="toc-head">'
                             '<button class="toc-caret open" type="button" '

@@ -32,6 +32,7 @@ import html as htmlmod
 import json
 import os
 import re
+import shutil
 import sys
 import time
 import urllib.parse
@@ -1883,14 +1884,16 @@ def page_template(site, title, sidebar, body, active_slug):
     meta = f"{len(site.sections)} sections · generated {site.generated}"
     feed_link = ('<link rel="alternate" type="application/rss+xml" title="RSS feed" '
                  'href="feed.xml">\n') if getattr(site, "base_url", "") else ""
+    apple_icon = ('<link rel="apple-touch-icon" href="favicon.png">\n'
+                  if getattr(site, "apple_icon", False) else "")
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(title)}</title>
-{feed_link}<link rel="icon" href="https://mvsep.com/images/favicon.ico">
-<link rel="stylesheet" href="assets/style.css">
+{feed_link}<link rel="icon" href="favicon.ico">
+{apple_icon}<link rel="stylesheet" href="assets/style.css">
 <script>(function(){{var t;try{{t=localStorage.getItem("doc-theme");}}catch(e){{}}document.documentElement.setAttribute("data-theme",t||"dark");}})();</script>
 </head>
 <body>
@@ -2194,6 +2197,15 @@ def write_seo_files(site, out, base_url):
 
 def write_site(site, out):
     os.makedirs(os.path.join(out, "assets"), exist_ok=True)
+    # Self-host the favicon (if present next to the script) instead of
+    # hotlinking it, so the mirror is self-contained.
+    here = os.path.dirname(os.path.abspath(__file__))
+    for fn in ("favicon.ico", "favicon.png"):
+        src = os.path.join(here, fn)
+        if os.path.exists(src):
+            shutil.copy(src, os.path.join(out, fn))
+    # Only link the high-res PNG icon when it's actually available.
+    site.apple_icon = os.path.exists(os.path.join(here, "favicon.png"))
     with open(os.path.join(out, "assets", "style.css"), "w", encoding="utf-8") as f:
         f.write(STYLE_CSS)
     with open(os.path.join(out, "assets", "app.js"), "w", encoding="utf-8") as f:

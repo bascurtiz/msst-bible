@@ -2,8 +2,9 @@ name: Deploy Google Doc Mirror
 
 on:
   schedule:
-    # Runs every 15 minutes
-    - cron: '*/15 * * * *'
+    # Runs every 15 minutes, offset off the top-of-hour to dodge GitHub's
+    # high-load schedule windows (which can delay or drop :00/:15/:30/:45 ticks)
+    - cron: '4,19,34,49 * * * *'
   workflow_dispatch: # Allow manual trigger
 
 permissions:

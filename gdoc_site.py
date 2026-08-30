@@ -246,9 +246,13 @@ def chunk_blocks(blocks, threshold=CHUNK_THRESHOLD):
 def build_subs(blocks):
     """Sub-headings inside a page (everything except the page's own title).
 
-    Includes real headings plus any heading demoted to a paragraph during
-    normalization (long prose styled as a heading), so the navigation outline
-    stays complete and mirrors Google's "Document tabs"."""
+    Only *real* section headings are listed in the navigation outline. A
+    heading whose content is body-length prose (e.g. a news item or a
+    paragraph that was styled as a heading) is demoted to a paragraph during
+    normalization, and that demoted block intentionally does not become an
+    outline entry — matching Google's outline, which lists the document's
+    actual section titles but not the prose typed into heading styles. Its
+    anchor is still registered elsewhere for link/scroll resolution."""
     subs = []
     for i, b in enumerate(blocks):
         if i == 0 and b["type"] == "heading":
@@ -258,11 +262,6 @@ def build_subs(blocks):
             if not is_decorative_heading(title):
                 subs.append({"level": b["level"], "id": b.get("heading_id"),
                              "title": title})
-        elif b["type"] == "para" and b.get("heading_id"):
-            title = text_of_runs(b["runs"])
-            if not is_decorative_heading(title):
-                subs.append({"level": b.get("level", 6),
-                             "id": b.get("heading_id"), "title": title})
         elif b["type"] == "heading" and not text_of_runs(b.get("runs", [])).strip():
             continue  # empty heading (all line breaks) contributes no outline item
     return subs

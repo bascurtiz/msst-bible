@@ -1459,6 +1459,16 @@ a:hover { text-decoration: underline; }
   background: var(--scroll-thumb); border-radius: 6px;
   border: 2px solid var(--sidebar-bg); }
 .sidebar::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
+
+/* main document scrollbar (the window scroll), same theme styling */
+html { scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) var(--scroll-track); }
+html::-webkit-scrollbar { width: 12px; }
+html::-webkit-scrollbar-track { background: var(--scroll-track); }
+html::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb); border-radius: 6px;
+  border: 2px solid var(--bg); }
+html::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
 .sidebar-brand { display: block; font-weight: 700; margin: 4px 8px 10px; color: var(--fg); }
 .tab-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 4px 12px; }
 .chip { font-size: 13px; padding: 3px 10px; border: 1px solid var(--border);

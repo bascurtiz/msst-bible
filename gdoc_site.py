@@ -1426,8 +1426,11 @@ a:hover { text-decoration: underline; }
   padding: 8px 16px; background: var(--sidebar-bg);
   border-bottom: 1px solid var(--border);
 }
-.topbar .brand { font-weight: 600; white-space: nowrap; overflow: hidden;
+.topbar .brand { display: flex; align-items: center; gap: 8px;
+  font-weight: 600; white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; color: var(--fg); }
+.brand-logo { width: 22px; height: 22px; flex: 0 0 auto;
+  border-radius: 5px; object-fit: contain; }
 #nav-toggle { display: none; background: none; border: 1px solid var(--border);
   border-radius: 6px; color: var(--fg); font-size: 18px; padding: 2px 10px; cursor: pointer; }
 #search { flex: 1; max-width: 420px; margin-left: auto;
@@ -1565,7 +1568,8 @@ h1 { font-size: 26px; line-height: 1.3; margin: 4px 0 10px; font-weight: 400; }
 footer { margin-top: 48px; font-size: 13px; color: var(--muted); }
 
 @media (max-width: 900px) {
-  #nav-toggle { display: block; }
+  .brand-logo { width: 26px; height: 26px; }
+  .brand-text { display: none; }
   .sidebar { position: fixed; top: 49px; bottom: 0; left: 0; z-index: 20;
     transform: translateX(-100%); transition: transform .18s ease; max-height: none; }
   .sidebar.open { transform: translateX(0); }
@@ -1917,7 +1921,9 @@ def page_template(site, title, sidebar, body, active_slug):
 <body>
 <header class="topbar">
 <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
-<a class="brand" href="index.html">{esc(site.title)}</a>
+<a class="brand" href="index.html"><img class="brand-logo"
+  src="favicon.png" alt="site logo" width="22" height="22"><span
+  class="brand-text">{esc(site.title)}</span></a>
 <input id="search" type="search" placeholder="Search this document…" autocomplete="off">
 <button id="theme-toggle" aria-label="Toggle color theme" title="Toggle light/dark theme">☾</button>
 </header>

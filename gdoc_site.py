@@ -1453,11 +1453,11 @@ a:hover { text-decoration: underline; }
   scrollbar-width: thin;
   scrollbar-color: var(--scroll-thumb) var(--scroll-track);
 }
-.sidebar::-webkit-scrollbar { width: 13px; }
+.sidebar::-webkit-scrollbar { width: 8px; }
 .sidebar::-webkit-scrollbar-track { background: var(--scroll-track); }
 .sidebar::-webkit-scrollbar-thumb {
   background: var(--scroll-thumb); border-radius: 6px;
-  border: 2px solid var(--sidebar-bg); }
+  border: 1px solid var(--sidebar-bg); }
 .sidebar::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
 
 /* main document scrollbar (the window scroll), same theme styling */

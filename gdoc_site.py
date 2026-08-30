@@ -2305,6 +2305,14 @@ def write_site(site, out):
     gsc_file = os.path.join(here, "google590856c13a26a9ec.html")
     if os.path.exists(gsc_file):
         shutil.copy(gsc_file, os.path.join(out, "google590856c13a26a9ec.html"))
+    # Always write a real robots.txt (otherwise Cloudflare serves the HTML
+    # fallback for /robots.txt and Google's crawler finds no Sitemap directive).
+    base_url = getattr(site, "base_url", "")
+    robots = "User-agent: *\nAllow: /\n"
+    if base_url:
+        robots += ("Sitemap: %s/sitemap.xml\n" % base_url.rstrip("/"))
+    with open(os.path.join(out, "robots.txt"), "w", encoding="utf-8") as f:
+        f.write(robots)
     # Only link the high-res PNG icon when it's actually available.
     site.apple_icon = os.path.exists(os.path.join(here, "favicon.png"))
     with open(os.path.join(out, "assets", "style.css"), "w", encoding="utf-8") as f:

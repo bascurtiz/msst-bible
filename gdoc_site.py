@@ -1570,6 +1570,7 @@ footer { margin-top: 48px; font-size: 13px; color: var(--muted); }
 @media (max-width: 900px) {
   .brand-logo { width: 26px; height: 26px; }
   .brand-text { display: none; }
+  #nav-toggle { display: block; }
   .sidebar { position: fixed; top: 49px; bottom: 0; left: 0; z-index: 20;
     transform: translateX(-100%); transition: transform .18s ease; max-height: none; }
   .sidebar.open { transform: translateX(0); }

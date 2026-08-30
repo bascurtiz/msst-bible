@@ -1437,6 +1437,9 @@ a:hover { text-decoration: underline; }
 .toc-caret.open { transform: rotate(90deg); }
 .toc-subs { display: none; }
 .toc-subs.open { display: block; }
+.outline-hint { font-size: 13px; color: var(--muted); margin: 6px 0 14px; }
+.toc-full { padding: 2px 4px; }
+.toc-full > .toc-item { border-bottom: 1px solid var(--border); }
 .toc-preview { position: fixed; z-index: 60; pointer-events: none;
   max-width: min(340px, calc(100vw - 32px)); padding: 8px 12px; border-radius: 8px;
   background: var(--bg); color: var(--fg); border: 1px solid var(--border);
@@ -1994,6 +1997,7 @@ def sidebar_html(site, active_slug=None):
         p.append('</ul></li>')
     p.append('</ul>')
     p.append(f'<div class="sidebar-foot"><a href="index.html">Index</a> · '
+             f'<a href="outline.html">Outline</a> · '
              f'<a href="https://docs.google.com/document/d/{attr(site.doc_id)}/edit">Google Doc ↗</a></div>')
     p.append('</div>')
     return "".join(p)
@@ -2077,8 +2081,51 @@ def render_index(site):
     body.append('<div class="doc">')
     body.append(site.render_blocks(blocks))
     body.append('</div>')
-    body.append('<div class="index-link"><a href="contents.html">Full table of contents →</a></div>')
+    body.append('<div class="index-link"><a href="contents.html">Full table of contents →</a> · '
+                 '<a href="outline.html">Document outline →</a></div>')
     return page_template(site, site.title, sidebar_html(site), chr(10).join(body), None)
+
+
+def render_outline(site):
+    """A dedicated full-outline page mirroring the Google Doc's left
+    "Document tabs" panel: every heading, nested, in reading order."""
+    children = {}
+    for s in site.sections:
+        if s.get("parent"):
+            children.setdefault(s["parent"], []).append(s)
+    body = ['<h1>Document outline</h1>']
+    body.append('<p class="outline-hint">Every heading in the document, in reading '
+                'order. Expand a group to reveal its sub-headings.</p>')
+    body.append('<ul class="toc toc-full">')
+    multi = len(site.tabs) > 1
+    for t in site.tabs:
+        roots = [s for s in site.sections
+                 if s["tab"] == t["id"] and not s.get("parent")]
+        if not roots:
+            continue
+        if multi:
+            body.append(f'<li class="toc-group"><span class="toc-tab">'
+                        f'{esc(t["title"])}</span><ul class="toc-subs open">')
+        for s in roots:
+            link = (f'<a class="toc-section" href="{s["slug"]}.html">'
+                    f'{esc(s["title"])}</a>')
+            inner = []
+            for k in children.get(s["slug"], []):
+                inner.append(f'<li><a href="{k["slug"]}.html">{esc(k["title"])}</a></li>')
+            inner.append(_render_toc_nodes(_sub_tree(s.get("subs", [])), s["slug"]))
+            if inner and any(x.strip() for x in inner):
+                body.append('<li class="toc-item"><div class="toc-head">'
+                            '<button class="toc-caret open" type="button" '
+                            'aria-label="Toggle sub-headings">▸</button>'
+                            f'{link}</div><ul class="toc-subs open">'
+                            f'{chr(10).join(inner)}</ul></li>')
+            else:
+                body.append(f'<li class="toc-item">{link}</li>')
+        if multi:
+            body.append('</ul></li>')
+    body.append('</ul>')
+    return page_template(site, f"Outline — {site.title}", sidebar_html(site),
+                         "\n".join(body), None)
 
 
 def render_contents(site):
@@ -2243,6 +2290,8 @@ def write_site(site, out):
         f.write(render_index(site))
     with open(os.path.join(out, "contents.html"), "w", encoding="utf-8") as f:
         f.write(render_contents(site))
+    with open(os.path.join(out, "outline.html"), "w", encoding="utf-8") as f:
+        f.write(render_outline(site))
     for i, sec in enumerate(site.sections):
         with open(os.path.join(out, f"{sec['slug']}.html"), "w", encoding="utf-8") as f:
             f.write(render_section_page(site, i, sec))

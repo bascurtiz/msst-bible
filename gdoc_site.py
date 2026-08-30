@@ -1453,7 +1453,7 @@ a:hover { text-decoration: underline; }
   scrollbar-width: thin;
   scrollbar-color: var(--scroll-thumb) var(--scroll-track);
 }
-.sidebar::-webkit-scrollbar { width: 10px; }
+.sidebar::-webkit-scrollbar { width: 14px; }
 .sidebar::-webkit-scrollbar-track { background: var(--scroll-track); }
 .sidebar::-webkit-scrollbar-thumb {
   background: var(--scroll-thumb); border-radius: 6px;
@@ -1463,7 +1463,7 @@ a:hover { text-decoration: underline; }
 /* main document scrollbar (the window scroll), same theme styling */
 html { scrollbar-width: thin;
   scrollbar-color: var(--scroll-thumb) var(--scroll-track); }
-html::-webkit-scrollbar { width: 12px; }
+html::-webkit-scrollbar { width: 16px; }
 html::-webkit-scrollbar-track { background: var(--scroll-track); }
 html::-webkit-scrollbar-thumb {
   background: var(--scroll-thumb); border-radius: 6px;

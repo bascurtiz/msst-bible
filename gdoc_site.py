@@ -41,6 +41,9 @@ from html.parser import HTMLParser
 DOCS_API = "https://docs.googleapis.com/v1/documents/{doc}?includeTabsContent=true"
 EXPORT_URL = "https://docs.google.com/document/d/{doc}/export?format=html"
 USER_AGENT = "Mozilla/5.0 (gdoc-site mirror generator)"
+# Default site name when no --title override is given (used for <title>, brand,
+# tabs, RSS/sitemap). Forks can override with gdoc_site.py --title "...".
+SITE_TITLE = "MSST Bible"
 
 # --- OAuth 2.0 (Google no longer accepts API keys for the Docs API) ---------
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -1136,7 +1139,7 @@ def collapse_toc(blocks):
     return out
 
 
-def parse_export(html_text, title="Google Doc", doc_id=""):
+def parse_export(html_text, title=SITE_TITLE, doc_id=""):
     css_map = {}
     for m in re.finditer(r"<style[^>]*>(.*?)</style>", html_text, re.S):
         css_map.update(parse_css(m.group(1)))
@@ -1886,7 +1889,8 @@ def page_template(site, title, sidebar, body, active_slug):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(title)}</title>
-{feed_link}<link rel="stylesheet" href="assets/style.css">
+{feed_link}<link rel="icon" href="https://mvsep.com/images/favicon.ico">
+<link rel="stylesheet" href="assets/style.css">
 <script>(function(){{var t;try{{t=localStorage.getItem("doc-theme");}}catch(e){{}}document.documentElement.setAttribute("data-theme",t||"dark");}})();</script>
 </head>
 <body>
@@ -2271,7 +2275,7 @@ def main(argv=None):
         else:
             sys.stderr.write("Falling back to the (flattened) HTML export.\n")
             html_text = fetch_export(args.doc)
-            title, tabs = parse_export(html_text, title=args.title or "Google Doc",
+            title, tabs = parse_export(html_text, title=args.title or SITE_TITLE,
                                        doc_id=args.doc)
             source = "export"
     elif source == "file":
@@ -2281,7 +2285,7 @@ def main(argv=None):
         args.doc = args.doc or data.get("documentId", "")
     else:
         html_text = fetch_export(args.doc)
-        title, tabs = parse_export(html_text, title=args.title or "Google Doc",
+        title, tabs = parse_export(html_text, title=args.title or SITE_TITLE,
                                    doc_id=args.doc)
 
     if args.title:

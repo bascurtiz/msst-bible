@@ -1960,11 +1960,13 @@ def _render_toc_nodes(nodes, slug):
     for n in nodes:
         href = f'{slug}.html#{n["id"]}' if n.get("id") else f'{slug}.html'
         if n["children"]:
+            # expanded by default so the whole outline is visible at once,
+            # like Google's "Document tabs"; carets still collapse groups.
             out.append('<li class="toc-item"><div class="toc-head">'
-                       '<button class="toc-caret" type="button" '
+                       '<button class="toc-caret open" type="button" '
                        'aria-label="Toggle sub-headings">▸</button>'
                        f'<a href="{href}">{esc(n["title"])}</a></div>')
-            out.append(f'<ul class="toc-subs">'
+            out.append(f'<ul class="toc-subs open">'
                        f'{_render_toc_nodes(n["children"], slug)}</ul></li>')
         else:
             out.append(f'<li><a href="{href}">{esc(n["title"])}</a></li>')
@@ -1999,9 +2001,9 @@ def sidebar_html(site, active_slug=None):
             kids = children.get(s["slug"], [])
             subs = s.get("subs", [])
             if kids or subs:
-                # expanded by default only for the section you're currently in
-                open_ = (s["slug"] == active_slug
-                         or any(k["slug"] == active_slug for k in kids))
+                # expand every group by default so the full document outline is
+                # visible (mirroring Google's "Document tabs"); carets collapse.
+                open_ = True
                 subs_cls = " open" if open_ else ""
                 caret_cls = " open" if open_ else ""
                 p.append('<li class="toc-item"><div class="toc-head">'

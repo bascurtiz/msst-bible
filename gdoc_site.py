@@ -1462,11 +1462,6 @@ a:hover { text-decoration: underline; }
 .toc a, .toc .toc-tab { display: block; white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; max-width: 100%; }
 .toc-item { margin: 0; }
-.toc-head { display: flex; align-items: center; gap: 2px; }
-.toc-head .toc-section { flex: 1 1 auto; min-width: 0; }
-.toc-caret { background: none; border: none; color: var(--muted); cursor: pointer;
-  font-size: 10px; line-height: 1; padding: 5px 6px; transition: transform .12s ease; }
-.toc-caret.open { transform: rotate(90deg); }
 .toc-subs { display: none; }
 .toc-subs.open { display: block; }
 .outline-hint { font-size: 13px; color: var(--muted); margin: 6px 0 14px; }
@@ -1673,20 +1668,7 @@ APP_JS = """\
     applyTheme(document.documentElement.getAttribute("data-theme") || "dark");
   }
 
-  // --- collapsible TOC groups --------------------------------------------
-  document.querySelectorAll(".toc-head").forEach(function (head) {
-    var caret = head.querySelector(".toc-caret");
-    if (!caret) return;
-    caret.addEventListener("click", function (e) {
-      var li = head.parentNode;
-      var subs = li && li.querySelector(".toc-subs");
-      if (subs) {
-        var open = subs.classList.toggle("open");
-        caret.classList.toggle("open", open);
-      }
-      e.preventDefault();
-    });
-  });
+
 
   // --- truncated-title preview -------------------------------------------
   var pv = document.createElement("div");
@@ -1969,17 +1951,15 @@ def _render_toc_nodes(nodes, slug):
     out = []
     for n in nodes:
         href = f'{slug}.html#{n["id"]}' if n.get("id") else f'{slug}.html'
+        label = f'<a href="{href}">{esc(clean_nav_title(n["title"]))}</a>'
         if n["children"]:
-            # expanded by default so the whole outline is visible at once,
-            # like Google's "Document tabs"; carets still collapse groups.
-            out.append('<li class="toc-item"><div class="toc-head">'
-                       '<button class="toc-caret open" type="button" '
-                       'aria-label="Toggle sub-headings">▸</button>'
-                       f'<a href="{href}">{esc(clean_nav_title(n["title"]))}</a></div>')
-            out.append(f'<ul class="toc-subs open">'
+            # flat, fully-expanded outline (no collapse caret) so every tab is
+            # visible at once, like Google's "Document tabs".
+            out.append(f'<li class="toc-item">{label}'
+                       f'<ul class="toc-subs open">'
                        f'{_render_toc_nodes(n["children"], slug)}</ul></li>')
         else:
-            out.append(f'<li><a href="{href}">{esc(clean_nav_title(n["title"]))}</a></li>')
+            out.append(f'<li>{label}</li>')
     return "".join(out)
 
 
@@ -2011,15 +1991,10 @@ def sidebar_html(site, active_slug=None):
             kids = children.get(s["slug"], [])
             subs = s.get("subs", [])
             if kids or subs:
-                # expand every group by default so the full document outline is
-                # visible (mirroring Google's "Document tabs"); carets collapse.
-                open_ = True
-                subs_cls = " open" if open_ else ""
-                caret_cls = " open" if open_ else ""
-                p.append('<li class="toc-item"><div class="toc-head">'
-                         f'<button class="toc-caret{caret_cls}" type="button" '
-                         f'aria-label="Toggle sub-headings">▸</button>{link}</div>')
-                p.append(f'<ul class="toc-subs{subs_cls}">')
+                # a flat, always-expanded outline (no collapse caret),
+                # mirroring Google's "Document tabs".
+                p.append(f'<li class="toc-item">{link}')
+                p.append('<ul class="toc-subs open">')
                 for k in kids:
                     ccls = ' current' if k["slug"] == active_slug else ""
                     p.append(f'<li><a class="toc-sub{ccls}" href="{k["slug"]}.html"'
@@ -2146,10 +2121,8 @@ def render_contents(site):
                 inner = (f'<li><a href="{k["slug"]}.html">'
                          f'{esc(clean_nav_title(k["title"]))}</a></li>' + inner)
             if inner.strip():
-                body.append('<li class="toc-item"><div class="toc-head">'
-                            '<button class="toc-caret open" type="button" '
-                            'aria-label="Toggle sub-headings">▸</button>'
-                            f'{link}</div><ul class="toc-subs open">{inner}</ul></li>')
+                body.append(f'<li class="toc-item">{link}'
+                            f'<ul class="toc-subs open">{inner}</ul></li>')
             else:
                 body.append(f'<li class="toc-item">{link}</li>')
         if multi:

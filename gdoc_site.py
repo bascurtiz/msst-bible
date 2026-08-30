@@ -1915,6 +1915,37 @@ def page_template(site, title, sidebar, body, active_slug):
 """
 
 
+def _sub_tree(subs):
+    """Turn a flat sub-heading list (level/id/title) into nested nodes."""
+    root = {"level": 0, "children": []}
+    stack = [(0, root)]
+    for sub in subs:
+        node = {"level": sub["level"], "id": sub.get("id"),
+                "title": sub["title"], "children": []}
+        while stack and stack[-1][0] >= node["level"]:
+            stack.pop()
+        stack[-1][1]["children"].append(node)
+        stack.append((node["level"], node))
+    return root["children"]
+
+
+def _render_toc_nodes(nodes, slug):
+    """Render nested, collapsible tree `<li>` items for sub-heading nodes."""
+    out = []
+    for n in nodes:
+        href = f'{slug}.html#{n["id"]}' if n.get("id") else f'{slug}.html'
+        if n["children"]:
+            out.append('<li class="toc-item"><div class="toc-head">'
+                       '<button class="toc-caret" type="button" '
+                       'aria-label="Toggle sub-headings">▸</button>'
+                       f'<a href="{href}">{esc(n["title"])}</a></div>')
+            out.append(f'<ul class="toc-subs">'
+                       f'{_render_toc_nodes(n["children"], slug)}</ul></li>')
+        else:
+            out.append(f'<li><a href="{href}">{esc(n["title"])}</a></li>')
+    return "".join(out)
+
+
 def sidebar_html(site, active_slug=None):
     children = {}
     for s in site.sections:
@@ -1941,7 +1972,7 @@ def sidebar_html(site, active_slug=None):
             link = (f'<a class="toc-section{cls}" href="{s["slug"]}.html"'
                      f'>{esc(s["title"])}</a>')
             kids = children.get(s["slug"], [])
-            subs = [x for x in s.get("subs", []) if x["level"] == 3]
+            subs = s.get("subs", [])
             if kids or subs:
                 # expanded by default only for the section you're currently in
                 open_ = (s["slug"] == active_slug
@@ -1956,9 +1987,7 @@ def sidebar_html(site, active_slug=None):
                     ccls = ' current' if k["slug"] == active_slug else ""
                     p.append(f'<li><a class="toc-sub{ccls}" href="{k["slug"]}.html"'
                              f'>{esc(k["title"])}</a></li>')
-                for sub in subs:
-                    href = f'{s["slug"]}.html#{sub["id"]}' if sub.get("id") else f'{s["slug"]}.html'
-                    p.append(f'<li><a href="{href}">{esc(sub["title"])}</a></li>')
+                p.append(_render_toc_nodes(_sub_tree(subs), s["slug"]))
                 p.append('</ul></li>')
             else:
                 p.append(f'<li class="toc-item">{link}</li>')

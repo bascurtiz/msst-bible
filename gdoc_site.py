@@ -244,7 +244,11 @@ def chunk_blocks(blocks, threshold=CHUNK_THRESHOLD):
 
 
 def build_subs(blocks):
-    """Sub-headings inside a page (everything except the page's own title)."""
+    """Sub-headings inside a page (everything except the page's own title).
+
+    Includes real headings plus any heading demoted to a paragraph during
+    normalization (long prose styled as a heading), so the navigation outline
+    stays complete and mirrors Google's "Document tabs"."""
     subs = []
     for i, b in enumerate(blocks):
         if i == 0 and b["type"] == "heading":
@@ -254,6 +258,13 @@ def build_subs(blocks):
             if not is_decorative_heading(title):
                 subs.append({"level": b["level"], "id": b.get("heading_id"),
                              "title": title})
+        elif b["type"] == "para" and b.get("heading_id"):
+            title = text_of_runs(b["runs"])
+            if not is_decorative_heading(title):
+                subs.append({"level": b.get("level", 6),
+                             "id": b.get("heading_id"), "title": title})
+        elif b["type"] == "heading" and not text_of_runs(b.get("runs", [])).strip():
+            continue  # empty heading (all line breaks) contributes no outline item
     return subs
 
 
@@ -755,8 +766,19 @@ def normalize_heading(b):
         first.append(r.get("text", ""))
     fl = "".join(first).strip()
     if len(fl) >= HEADING_PROSE_LEN and not fl.startswith("___"):
+        # Keep the original heading level so the navigation outline (which
+        # mirrors Google's "Document tabs") can still include this entry.
         return [{"type": "para", "heading_id": b.get("heading_id"),
-                 "runs": runs}]
+                 "level": b.get("level"), "runs": runs}]
+    # A heading that begins with a line break has no title line to preserve —
+    # don't split it into an empty heading + body. Just drop the leading
+    # line break(s) and keep the whole thing as a heading.
+    if not fl:
+        idx = 0
+        while idx < len(runs) and runs[idx].get("br"):
+            idx += 1
+        if idx and idx < len(runs):
+            return [dict(b, runs=runs[idx:])]
     for i, r in enumerate(runs):
         if r.get("br"):
             body = [x for x in runs[i + 1:] if not x.get("br")]

@@ -1402,12 +1402,17 @@ STYLE_CSS = """\
   /* neutral backdrop + the "sheet of paper" the document sits on */
   --page-bg: #0b0e14;
   --paper-bg: #1c2331;
+  /* visible scrollbars for the document-tabs sidebar (dark theme) */
+  --scroll-thumb: #3f444c; --scroll-thumb-hover: #4b5158;
+  --scroll-track: #10151b;
 }
 :root[data-theme="light"] {
   --bg: #ffffff; --fg: #1f2328; --muted: #656d76;
   --sidebar-bg: #f6f8fa; --border: #d8dee4;
   --accent: #0969da; --accent-soft: #ddf4ff;
   --code-bg: #eff1f3; --table-border: #d0d7de;
+  --scroll-thumb: #c1c9d1; --scroll-thumb-hover: #b1b9c2;
+  --scroll-track: transparent;
   --page-bg: #f8f9fa;
   --paper-bg: #ffffff;
 }
@@ -1445,7 +1450,15 @@ a:hover { text-decoration: underline; }
   width: 300px; flex: 0 0 300px; border-right: 1px solid var(--border);
   background: var(--sidebar-bg); max-height: calc(100vh - 49px);
   position: sticky; top: 49px; overflow-y: auto; padding: 12px 10px 40px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) var(--scroll-track);
 }
+.sidebar::-webkit-scrollbar { width: 10px; }
+.sidebar::-webkit-scrollbar-track { background: var(--scroll-track); }
+.sidebar::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb); border-radius: 6px;
+  border: 2px solid var(--sidebar-bg); }
+.sidebar::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); }
 .sidebar-brand { display: block; font-weight: 700; margin: 4px 8px 10px; color: var(--fg); }
 .tab-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 4px 12px; }
 .chip { font-size: 13px; padding: 3px 10px; border: 1px solid var(--border);

@@ -116,6 +116,10 @@ OUTLINE_EXCLUDE = {
     "h.snva8th7p3bn", "h.en3r3zxljk3w", "h.7ln6u4wu5csz", "h.g6guxr3z230p",
     "h.nujhjtjwtvpb", "h.941m71ob400", "h.k3vca4e9ena8-1", "h.tvbntqdvkn9n",
     "h.jx9um5zd7fnp", "h.hkry3b4x7kv0",
+    # Second round of doc-author-flagged noise (news/model-list clutter):
+    "h.mha9xrfqx84j", "h.wxjfq1gfq37b", "h.ych3p8fftzi0", "h.v4wq54do0m30",
+    "h.85xth1o1xa0p", "h.9una7hhstsnk", "h.c25tza6ak9pi", "h.toae4851qt3d",
+    "h.vktvthhthrvh", "h.euyv55qdbx07", "h.ynukuzsi11zf", "h.pjvi1qowv8cq",
 }
 
 # Headings whose original leading marker characters are meaningful and must
@@ -1580,6 +1584,10 @@ h1 { font-size: 26px; line-height: 1.3; margin: 4px 0 10px; font-weight: 400; }
   border-bottom: 1px solid var(--border); font-weight: 600; }
 .doc h3 { font-size: 17px; margin: 1.4em 0 .5em; font-weight: 600; }
 .doc h4, .doc h5, .doc h6 { font-size: 16px; margin: 1.2em 0 .3em; }
+/* Prose sentence the doc author typed as a heading: keep it in the outline
+   (and keep its anchor id) but drop the default bold heading weight so it
+   reads as body text. */
+.doc #h\.bguqx29wxh6h { font-weight: 400; }
 .doc h1.subtitle, .doc h2.subtitle { border-bottom: none; font-weight: 500;
   color: var(--muted); font-size: 18px; }
 .doc p { margin: .8em 0; line-height: 1.6; }

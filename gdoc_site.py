@@ -1480,7 +1480,7 @@ a:hover { text-decoration: underline; }
 
 .layout { display: flex; align-items: stretch; }
 .sidebar {
-  width: 300px; flex: 0 0 300px; border-right: 1px solid var(--border);
+  width: 380px; flex: 0 0 380px; border-right: 1px solid var(--border);
   background: var(--sidebar-bg); max-height: calc(100vh - 49px);
   position: sticky; top: 49px; overflow-y: auto; padding: 12px 10px 40px;
   scrollbar-width: thin;
@@ -1632,7 +1632,8 @@ footer { margin-top: 48px; font-size: 13px; color: var(--muted); }
   .brand-text { display: none; }
   #nav-toggle { display: block; }
   .sidebar { position: fixed; top: 49px; bottom: 0; left: 0; z-index: 20;
-    transform: translateX(-100%); transition: transform .18s ease; max-height: none; }
+    transform: translateX(-100%); transition: transform .18s ease; max-height: none;
+    width: min(380px, 86vw); flex-basis: auto; }
   .sidebar.open { transform: translateX(0); }
   .content { padding: 20px 18px 60px; max-width: none; margin: 0;
     border-radius: 0; box-shadow: none; border-left: none; border-right: none; }

@@ -108,6 +108,33 @@ def clean_nav_title(t):
     return _NAV_MARK.sub("", t).strip()
 
 
+# Sub-headings to hide from the navigation outline (the document-tabs index)
+# even though they remain real headings in the page body (their anchors and
+# content still render). The doc author flagged these as noise.
+OUTLINE_EXCLUDE = {
+    "h.rbip7cu8qym5", "h.zgs4nmt4n7oi", "h.7d0taha5j2l4", "h.7hyw89vmnqto",
+    "h.snva8th7p3bn", "h.en3r3zxljk3w", "h.7ln6u4wu5csz", "h.g6guxr3z230p",
+    "h.nujhjtjwtvpb", "h.941m71ob400", "h.k3vca4e9ena8-1", "h.tvbntqdvkn9n",
+    "h.jx9um5zd7fnp", "h.hkry3b4x7kv0",
+}
+
+# Headings whose original leading marker characters are meaningful and must
+# stay visible in the outline (normally markers like "- ", "> " are stripped).
+KEEP_RAW_HEADINGS = {"h.929g1wjjaxz7"}
+
+
+def nav_title(t, hid=None):
+    """Navigation label: keep raw markers only for the KEEP_RAW_HEADINGS ids."""
+    if hid in KEEP_RAW_HEADINGS:
+        return (t or "").strip()
+    return clean_nav_title(t)
+
+
+def nav_subs(subs):
+    """Sub-headings shown in the outline (OUTLINE_EXCLUDE ids are hidden)."""
+    return [x for x in (subs or []) if x.get("id") not in OUTLINE_EXCLUDE]
+
+
 def slugify(t):
     t = t.lower()
     t = re.sub(r"[^\w\s-]", "", t, flags=re.UNICODE)
@@ -1426,7 +1453,7 @@ STYLE_CSS = """\
 html { scroll-behavior: smooth; }
 body {
   margin: 0; background: var(--page-bg); color: var(--fg);
-  font: 16px/1.65 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font: 16px/1.65 Arial, Helvetica, sans-serif;
 }
 a { color: var(--accent); text-decoration: none; font-weight: 600; }
 a:hover { text-decoration: underline; }
@@ -1493,6 +1520,8 @@ html::-webkit-scrollbar-thumb:hover, body::-webkit-scrollbar-thumb:hover {
 .toc-subs a { display: block; padding: 5px 6px; font-size: 13px; color: var(--muted); }
 .toc-subs a:hover { color: var(--fg); text-decoration: none; }
 .toc-sub.current { color: var(--fg); font-weight: 600; }
+.toc a.nav-active { color: var(--fg); font-weight: 700;
+  background: var(--accent-soft); border-radius: 6px; }
 .toc a, .toc .toc-tab { display: block; white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; max-width: 100%; }
 .toc-item { margin: 3px 0; }
@@ -1931,6 +1960,44 @@ APP_JS = """\
     });
   }
 })();
+
+(function () {
+  // --- index navigation: highlight the chosen entry in the left index and
+  // keep it visible (scroll the index panel if the entry sits outside its
+  // current viewport) whenever the page lands on a #anchor deep link.
+  function qs(sel) { return document.querySelector(sel); }
+  function syncNav() {
+    var sb = qs(".sidebar");
+    if (!sb) return;
+    var old = sb.querySelector("a.nav-active");
+    if (old) old.classList.remove("nav-active");
+    var hash = location.hash;
+    if (!hash || hash.length < 2) return;
+    var hid = hash.slice(1);
+    var target = null;
+    sb.querySelectorAll("a[href]").forEach(function (a) {
+      if (target) return;
+      var href = a.getAttribute("href") || "";
+      var i = href.indexOf("#");
+      if (i >= 0 && href.slice(i + 1) === hid) target = a;
+    });
+    if (!target) return;
+    target.classList.add("nav-active");
+    // reveal the highlighted row inside the index's own scroll area
+    var pad = 14;
+    var sTop = sb.getBoundingClientRect().top;
+    var sBot = sb.getBoundingClientRect().bottom;
+    var tTop = target.getBoundingClientRect().top;
+    var tBot = target.getBoundingClientRect().bottom;
+    if (tTop < sTop + pad) {
+      sb.scrollTop += tTop - sTop - pad;
+    } else if (tBot > sBot - pad) {
+      sb.scrollTop += tBot - sBot + pad;
+    }
+  }
+  window.addEventListener("hashchange", syncNav);
+  syncNav();
+})();
 """
 
 
@@ -1992,7 +2059,7 @@ def _render_toc_nodes(nodes, slug):
     out = []
     for n in nodes:
         href = f'{slug}.html#{n["id"]}' if n.get("id") else f'{slug}.html'
-        label = f'<a href="{href}">{esc(clean_nav_title(n["title"]))}</a>'
+        label = f'<a href="{href}">{esc(nav_title(n["title"], n.get("id")))}</a>'
         if n["children"]:
             # flat, fully-expanded outline (no collapse caret) so every tab is
             # visible at once, like Google's "Document tabs".
@@ -2028,9 +2095,10 @@ def sidebar_html(site, active_slug=None):
         for s in roots:
             cls = ' current' if s["slug"] == active_slug else ""
             link = (f'<a class="toc-section{cls}" href="{s["slug"]}.html"'
-                     f'>{esc(clean_nav_title(s["title"]))}</a>')
-            kids = children.get(s["slug"], [])
-            subs = s.get("subs", [])
+                     f'>{esc(nav_title(s["title"], s.get("heading_id")))}</a>')
+            kids = [k for k in children.get(s["slug"], [])
+                    if k.get("heading_id") not in OUTLINE_EXCLUDE]
+            subs = nav_subs(s.get("subs", []))
             if kids or subs:
                 # a flat, always-expanded outline (no collapse caret),
                 # mirroring Google's "Document tabs".
@@ -2039,8 +2107,9 @@ def sidebar_html(site, active_slug=None):
                 for k in kids:
                     ccls = ' current' if k["slug"] == active_slug else ""
                     p.append(f'<li><a class="toc-sub{ccls}" href="{k["slug"]}.html"'
-                             f'>{esc(clean_nav_title(k["title"]))}</a></li>')
+                             f'>{esc(nav_title(k["title"], k.get("heading_id")))}</a></li>')
                 p.append(_render_toc_nodes(_sub_tree(subs), s["slug"]))
+
                 p.append('</ul></li>')
             else:
                 p.append(f'<li class="toc-item">{link}</li>')
@@ -2156,11 +2225,14 @@ def render_contents(site):
                         f'{esc(t["title"])}</span><ul class="toc-subs open">')
         for s in roots:
             link = (f'<a class="toc-section" href="{s["slug"]}.html">'
-                    f'{esc(clean_nav_title(s["title"]))}</a>')
-            inner = _render_toc_nodes(_sub_tree(s.get("subs", [])), s["slug"])
+                    f'{esc(nav_title(s["title"], s.get("heading_id")))}</a>')
+            inner = _render_toc_nodes(_sub_tree(nav_subs(s.get("subs", []))), s["slug"])
             for k in children.get(s["slug"], []):
+                if k.get("heading_id") in OUTLINE_EXCLUDE:
+                    continue  # hidden from the index outline
+
                 inner = (f'<li><a href="{k["slug"]}.html">'
-                         f'{esc(clean_nav_title(k["title"]))}</a></li>' + inner)
+                         f'{esc(nav_title(k["title"], k.get("heading_id")))}</a></li>' + inner)
             if inner.strip():
                 body.append(f'<li class="toc-item">{link}'
                             f'<ul class="toc-subs open">{inner}</ul></li>')

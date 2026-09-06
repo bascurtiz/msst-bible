@@ -172,6 +172,22 @@ def unwrap_google_url(href):
     return href
 
 
+# Two hyperlinks sitting on one line in the source doc sometimes get merged
+# into one URL, glued with the marker string "%0A(src)%20" (an encoded
+# newline + "(src)" + space, e.g. a Drive-folder link fusing with a Discord
+# link from "Download (ref)"). Everything from the marker on belongs to the
+# second link, so drop it and keep only the first URL.
+_MERGED_LINK_RE = re.compile(r"(?:%0A|\n)\(src\)(?:%20| )", re.IGNORECASE)
+
+
+def clean_merged_url(url):
+    """Split links fused by the '%0A(src)%20' marker: keep the first URL."""
+    if not url:
+        return url
+    cleaned = _MERGED_LINK_RE.split(url, maxsplit=1)[0]
+    return cleaned.rstrip("\\") if cleaned != url else url
+
+
 def raw_link_from_href(href):
     """Turn an href from the export HTML into a raw link descriptor."""
     if not href:
@@ -188,7 +204,7 @@ def raw_link_from_href(href):
         if tab:
             return ("tab", tab)
         return None
-    return ("url", unwrap_google_url(href))
+    return ("url", clean_merged_url(unwrap_google_url(href)))
 
 
 def parse_api_link(link):
@@ -205,7 +221,7 @@ def parse_api_link(link):
     if "tabId" in link:
         return ("tab", link["tabId"])
     if link.get("url"):
-        return ("url", link["url"])
+        return ("url", clean_merged_url(link["url"]))
     return None
 
 
@@ -427,6 +443,7 @@ class Site:
         return "index.html"
 
     def resolve_url(self, url):
+        url = clean_merged_url(url)
         u = urllib.parse.urlsplit(url)
         if u.scheme not in ("http", "https"):
             return url

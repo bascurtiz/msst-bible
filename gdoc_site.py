@@ -585,6 +585,10 @@ class Site:
         for b in blocks:
             t = b["type"]
             if t == "para":
+                if not b.get("runs"):
+                    # deliberate blank line (an empty paragraph in the doc)
+                    out.append('<p class="gap">&nbsp;</p>')
+                    continue
                 # demoted prose headings keep their anchor id
                 hid = f' id="{attr(b["heading_id"])}"' if b.get("heading_id") else ""
                 out.append(f"<p{hid}>{self.render_runs(b['runs'])}</p>")
@@ -782,7 +786,12 @@ def parse_paragraph(p, ctx):
                 runs[-1] = {**runs[-1], "text": last.rstrip("\n")}
                 break
     if not runs:
-        return None
+        # An empty plain paragraph is the doc author's deliberate blank line
+        # (a second Enter in Google Docs) — keep it so the site mirrors the
+        # doc's layout: one Enter = tight next line, two Enters = blank line.
+        if level or p.get("bullet"):
+            return None
+        return {"type": "para", "runs": [], "blank": True}
     if p.get("bullet"):
         b = p["bullet"]
         return {
@@ -1153,6 +1162,15 @@ class ExportParser(HTMLParser):
             self.flush_inline()
             self.heading = None
         elif tag == "p":
+            if self.para and not self.inline and self.heading is None \
+                    and self.li is None:
+                # empty paragraph = the doc author's deliberate blank line
+                b = {"type": "para", "runs": []}
+                if self.table is not None:
+                    self.table_cell.append(b)
+                else:
+                    self.flush_pending_list()
+                    self.blocks.append(b)
             self.flush_inline()
             self.para = False
         elif tag == "span":
@@ -1607,7 +1625,10 @@ h1 { font-size: 26px; line-height: 1.3; margin: 4px 0 10px; font-weight: 400; }
 .doc #h\.bguqx29wxh6h { font-weight: 400; }
 .doc h1.subtitle, .doc h2.subtitle { border-bottom: none; font-weight: 500;
   color: var(--muted); font-size: 18px; }
-.doc p { margin: .8em 0; line-height: 1.6; }
+/* Paragraphs sit tight like in the Google Doc: a single Enter just moves to
+   the next line; the doc author's deliberate empty paragraphs render as
+   <p class="gap"> below — one visible blank line between blocks. */
+.doc p { margin: 0; line-height: 1.6; }
 .doc ul, .doc ol { padding-left: 1.6em; margin: .6em 0; }
 .doc li { margin: .25em 0; }
 .doc code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

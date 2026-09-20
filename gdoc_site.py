@@ -2019,15 +2019,20 @@ APP_JS = """\
     var old = sb.querySelector("a.nav-active");
     if (old) old.classList.remove("nav-active");
     var hash = location.hash;
-    if (!hash || hash.length < 2) return;
-    var hid = hash.slice(1);
     var target = null;
-    sb.querySelectorAll("a[href]").forEach(function (a) {
-      if (target) return;
-      var href = a.getAttribute("href") || "";
-      var i = href.indexOf("#");
-      if (i >= 0 && href.slice(i + 1) === hid) target = a;
-    });
+    if (hash && hash.length > 1) {
+      var hid = hash.slice(1);
+      sb.querySelectorAll("a[href]").forEach(function (a) {
+        if (target) return;
+        var href = a.getAttribute("href") || "";
+        var i = href.indexOf("#");
+        if (i >= 0 && href.slice(i + 1) === hid) target = a;
+      });
+    }
+    // no matching #anchor (a plain section link, or a heading the outline
+    // hides): fall back to the entry for this page, so the index still
+    // scrolls to the chosen position instead of jumping back to the top.
+    if (!target) target = sb.querySelector("a.current");
     if (!target) return;
     target.classList.add("nav-active");
     // reveal the highlighted row inside the index's own scroll area
@@ -2168,24 +2173,43 @@ def _sub_tree(subs):
     return root["children"]
 
 
-def _render_toc_nodes(nodes, slug):
-    """Render nested, collapsible tree `<li>` items for sub-heading nodes."""
+def home_section_slug(site):
+    """Slug of the section the site serves as its front page (index.html).
+
+    `render_index` renders that section's body into index.html, so outline
+    links to it can use the site root (/#h.…) instead of the section's own
+    slug — which for the daily news section is renamed every day
+    (edit. DD.MM.YY) and would otherwise date every link in the index.
+    """
+    return site.sections[0]["slug"] if site.sections else None
+
+
+def toc_href(home, slug, hid=None):
+    """Href for a section (or one of its headings) in the outline."""
+    if slug and slug == home:
+        return f"/#{hid}" if hid else "/"
+    return f"{slug}.html#{hid}" if hid else f"{slug}.html"
+
+
+def _render_toc_nodes(nodes, slug, home=None):
+    """Render nested, fully-expanded tree `<li>` items for sub-heading nodes."""
     out = []
     for n in nodes:
-        href = f'{slug}.html#{n["id"]}' if n.get("id") else f'{slug}.html'
+        href = toc_href(home, slug, n.get("id"))
         label = f'<a href="{href}">{esc(nav_title(n["title"], n.get("id")))}</a>'
         if n["children"]:
             # flat, fully-expanded outline (no collapse caret) so every tab is
             # visible at once, like Google's "Document tabs".
             out.append(f'<li class="toc-item">{label}'
                        f'<ul class="toc-subs open">'
-                       f'{_render_toc_nodes(n["children"], slug)}</ul></li>')
+                       f'{_render_toc_nodes(n["children"], slug, home)}</ul></li>')
         else:
             out.append(f'<li>{label}</li>')
     return "".join(out)
 
 
 def sidebar_html(site, active_slug=None):
+    home = home_section_slug(site)
     children = {}
     for s in site.sections:
         if s.get("parent"):
@@ -2194,7 +2218,9 @@ def sidebar_html(site, active_slug=None):
     if len(site.tabs) > 1:
         p.append('<div class="tab-chips">')
         for t in site.tabs:
-            p.append(f'<a class="chip" href="{site.tab_url(t["id"])}">{esc(t["title"])}</a>')
+            first = site.tab_first.get(t["id"])
+            href = toc_href(home, first) if first else site.tab_url(t["id"])
+            p.append(f'<a class="chip" href="{href}">{esc(t["title"])}</a>')
         p.append('</div>')
     p.append('<ul class="toc">')
     for t in site.tabs:
@@ -2208,7 +2234,7 @@ def sidebar_html(site, active_slug=None):
         p.append(f'<li class="toc-group"><span class="toc-tab">{esc(label)}</span><ul>')
         for s in roots:
             cls = ' current' if s["slug"] == active_slug else ""
-            link = (f'<a class="toc-section{cls}" href="{s["slug"]}.html"'
+            link = (f'<a class="toc-section{cls}" href="{toc_href(home, s["slug"])}"'
                      f'>{esc(nav_title(s["title"], s.get("heading_id")))}</a>')
             kids = [k for k in children.get(s["slug"], [])
                     if k.get("heading_id") not in OUTLINE_EXCLUDE]
@@ -2220,9 +2246,9 @@ def sidebar_html(site, active_slug=None):
                 p.append('<ul class="toc-subs open">')
                 for k in kids:
                     ccls = ' current' if k["slug"] == active_slug else ""
-                    p.append(f'<li><a class="toc-sub{ccls}" href="{k["slug"]}.html"'
+                    p.append(f'<li><a class="toc-sub{ccls}" href="{toc_href(home, k["slug"])}"'
                              f'>{esc(nav_title(k["title"], k.get("heading_id")))}</a></li>')
-                p.append(_render_toc_nodes(_sub_tree(subs), s["slug"]))
+                p.append(_render_toc_nodes(_sub_tree(subs), s["slug"], home))
 
                 p.append('</ul></li>')
             else:
@@ -2314,12 +2340,14 @@ def render_index(site):
     body.append(site.render_blocks(blocks))
     body.append('</div>')
     body.append('<div class="index-link"><a href="contents.html">Full table of contents →</a></div>')
-    return page_template(site, site.title, sidebar_html(site), chr(10).join(body), None)
+    return page_template(site, site.title, sidebar_html(site, first["slug"]),
+                         chr(10).join(body), first["slug"])
 
 
 def render_contents(site):
     """The index page: the full document outline (every heading, nested),
     mirroring the Google Doc's "Document tabs" panel."""
+    home = home_section_slug(site)
     children = {}
     for s in site.sections:
         if s.get("parent"):
@@ -2338,14 +2366,15 @@ def render_contents(site):
             body.append(f'<li class="toc-group"><span class="toc-tab">'
                         f'{esc(t["title"])}</span><ul class="toc-subs open">')
         for s in roots:
-            link = (f'<a class="toc-section" href="{s["slug"]}.html">'
+            link = (f'<a class="toc-section" href="{toc_href(home, s["slug"])}">'
                     f'{esc(nav_title(s["title"], s.get("heading_id")))}</a>')
-            inner = _render_toc_nodes(_sub_tree(nav_subs(s.get("subs", []))), s["slug"])
+            inner = _render_toc_nodes(_sub_tree(nav_subs(s.get("subs", []))),
+                                      s["slug"], home)
             for k in children.get(s["slug"], []):
                 if k.get("heading_id") in OUTLINE_EXCLUDE:
                     continue  # hidden from the index outline
 
-                inner = (f'<li><a href="{k["slug"]}.html">'
+                inner = (f'<li><a href="{toc_href(home, k["slug"])}">'
                          f'{esc(nav_title(k["title"], k.get("heading_id")))}</a></li>' + inner)
             if inner.strip():
                 body.append(f'<li class="toc-item">{link}'
@@ -2360,9 +2389,10 @@ def render_contents(site):
 
 def render_section_page(site, i, sec):
     total = len(site.sections)
+    home = home_section_slug(site)
     body = [f'<nav class="crumbs"><a href="index.html">{esc(site.title)}</a> › '
             f'<span>{esc(sec["tab_title"])}</span>'
-            + (f' › <a href="{sec["parent"]}.html">'
+            + (f' › <a href="{toc_href(home, sec["parent"])}">'
                + esc(next((s["title"] for s in site.sections
                            if s["slug"] == sec["parent"]), sec["parent"]))
                + '</a>' if sec.get("parent") else '')
@@ -2384,9 +2414,11 @@ def render_section_page(site, i, sec):
     nxt = site.sections[i + 1] if i + 1 < total else None
     pager = ['<nav class="pager">']
     if prev:
-        pager.append(f'<a class="prev" href="{prev["slug"]}.html">← {esc(prev["title"])}</a>')
+        pager.append(f'<a class="prev" href="{toc_href(home, prev["slug"])}">'
+                     f'← {esc(prev["title"])}</a>')
     if nxt:
-        pager.append(f'<a class="next" href="{nxt["slug"]}.html">{esc(nxt["title"])} →</a>')
+        pager.append(f'<a class="next" href="{toc_href(home, nxt["slug"])}">'
+                     f'{esc(nxt["title"])} →</a>')
     pager.append('</nav>')
     body.append("".join(pager))
     return page_template(site, f"{sec['title']} — {site.title}",

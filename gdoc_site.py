@@ -2027,6 +2027,73 @@ APP_JS = """\
 """
 
 
+def _latest_edit_slug(site):
+    """Newest dated news-section slug (e.g. 'edit-170926'). The doc author
+    renames that section in place every day, so its slug changes daily."""
+    best, best_n = None, -1
+    for sec in site.sections:
+        m = re.match(r"^edit-(\d+)$", sec["slug"])
+        if m and int(m.group(1)) > best_n:
+            best, best_n = sec["slug"], int(m.group(1))
+    return best
+
+
+def render_404_page(site):
+    """A real 404 page. Without one, Cloudflare Pages serves the homepage
+    (HTTP 200) for any unknown path, so links shared to the daily-renamed
+    'edit. DD.MM.YY' news section silently show the wrong snapshot. This
+    page forwards old dated-section links to the newest one, keeping the
+    #heading anchor (heading ids survive the daily rename)."""
+    latest = _latest_edit_slug(site)
+    if latest:
+        redirect_js = (
+            "(function(){\n"
+            "  var seg = location.pathname.replace(/.*\\//, '').replace(/\\.html$/, '');\n"
+            "  if (/^edit-/.test(seg)) {\n"
+            "    var target = '%(latest)s.html' + location.search + location.hash;\n"
+            "    var msg = document.getElementById('msg');\n"
+            "    if (msg) msg.textContent =\n"
+            "      'This daily news section was renamed \u2014 redirecting to the current one\u2026';\n"
+            "    setTimeout(function(){ location.replace(target); }, 300);\n"
+            "  }\n"
+            "})();"
+        ) % {"latest": latest}
+    else:
+        redirect_js = ""
+    return """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Page not found · MSST Bible</title>
+<link rel="icon" href="favicon.ico">
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center;
+         justify-content: center; font: 15px/1.6 Arial, Helvetica, sans-serif;
+         background: #0d1117; color: #e6edf3; text-align: center; }
+  .card { max-width: 460px; padding: 32px 36px; }
+  h1 { font-size: 52px; margin: 0 0 6px; color: #8b949e; }
+  p  { margin: 8px 0; }
+  a  { color: #4493f8; }
+  img { vertical-align: -4px; margin-right: 6px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>404</h1>
+  <p id="msg">This page doesn't exist &mdash; it may have been renamed in the document.</p>
+  <p><img src="favicon.png" alt="" width="20" height="20"><a href="contents.html">Open the index</a></p>
+</div>
+<script>
+%(redirect_js)s
+</script>
+</body>
+</html>
+""" % {"redirect_js": redirect_js}
+
+
 def page_template(site, title, sidebar, body, active_slug):
     meta = f"{len(site.sections)} sections · generated {site.generated}"
     feed_link = ('<link rel="alternate" type="application/rss+xml" title="RSS feed" '
@@ -2421,6 +2488,8 @@ def write_site(site, out):
         f.write(render_index(site))
     with open(os.path.join(out, "contents.html"), "w", encoding="utf-8") as f:
         f.write(render_contents(site))
+    with open(os.path.join(out, "404.html"), "w", encoding="utf-8") as f:
+        f.write(render_404_page(site))
     for i, sec in enumerate(site.sections):
         with open(os.path.join(out, f"{sec['slug']}.html"), "w", encoding="utf-8") as f:
             f.write(render_section_page(site, i, sec))

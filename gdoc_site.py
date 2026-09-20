@@ -438,8 +438,10 @@ class Site:
         return s["slug"] if s else None
 
     def tab_url(self, tab):
-        if tab in self.tab_first:
-            return self.tab_first[tab] + ".html"
+        slug = self.tab_first.get(tab)
+        if slug:
+            # the tab holding the front section is served from the site root
+            return toc_href(home_section_slug(self), slug)
         return "index.html"
 
     def resolve_url(self, url):
@@ -457,7 +459,9 @@ class Site:
                 if frag.startswith("heading="):
                     hid = frag.split("=", 1)[1]
                     slug = self.heading_slug(hid, tab)
-                    return f"{slug}.html#{hid}" if slug else "index.html"
+                    if slug:
+                        return toc_href(home_section_slug(self), slug, hid)
+                    return "index.html"
                 if tab:
                     return self.tab_url(tab)
                 return "index.html"
@@ -470,7 +474,9 @@ class Site:
         if kind == "heading":
             hid, tab = raw[1], raw[2]
             slug = self.heading_slug(hid, tab)
-            return f"{slug}.html#{hid}" if slug else "index.html"
+            if slug:
+                return toc_href(home_section_slug(self), slug, hid)
+            return "index.html"
         if kind == "bookmark":
             return self.tab_url(raw[1]) if raw[1] else "index.html"
         if kind == "tab":
@@ -522,7 +528,7 @@ class Site:
         if not hit:
             return None
         slug, frag = hit
-        return f"{slug}.html#{frag}" if frag else f"{slug}.html"
+        return toc_href(home_section_slug(self), slug, frag)
 
     def edit_url(self, section):
         tab = section["tab"]

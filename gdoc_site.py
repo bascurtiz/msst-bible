@@ -410,6 +410,19 @@ class Site:
                     }
                 self.sections.append(s)
 
+        # 2b) A document that opens with a Title/Subtitle line (its front
+        # matter) must not grow a near-empty front page titled after the site:
+        # fold that preamble into the first real section, so the site starts
+        # at the doc's first real section and the index starts with it too.
+        if len(self.sections) > 1:
+            first = self.sections[0]
+            if (first.get("heading_id") is None and first["blocks"]
+                    and all(b.get("doc_meta") for b in first["blocks"])):
+                nxt = self.sections[1]
+                nxt["blocks"] = first["blocks"] + nxt["blocks"]
+                self.sections.pop(0)
+                self.tab_first[first["tab"]] = nxt["slug"]
+
         # 3) heading id -> page map, for internal links
         for s in self.sections:
             hid = s.get("heading_id")
@@ -808,14 +821,21 @@ def parse_paragraph(p, ctx):
             "runs": runs,
         }
     if level:
-        return {
+        h = {
             "type": "heading",
             "level": level,
             "heading_id": pstyle.get("headingId"),
             "subtitle": named == "SUBTITLE",
             "runs": runs,
         }
-    return {"type": "para", "runs": runs}
+        if named in ("TITLE", "SUBTITLE"):
+            # front matter of the document, not a section of its own
+            h["doc_meta"] = True
+        return h
+    p_block = {"type": "para", "runs": runs}
+    if named in ("TITLE", "SUBTITLE"):
+        p_block["doc_meta"] = True
+    return p_block
 
 
 # A heading paragraph whose first line is this long is body prose that was
@@ -1048,6 +1068,7 @@ class ExportParser(HTMLParser):
         self.link_stack = []
         self.heading = None
         self.para = False
+        self.para_meta = False    # <p class="title"/"subtitle"> front matter
         self.li = None            # (tag, level, lid)
         self.list_stack = []
         self.list_count = 0
@@ -1091,7 +1112,12 @@ class ExportParser(HTMLParser):
                                  "runs": runs})
         else:
             self.flush_pending_list()
-            self.blocks.append({"type": "para", "runs": runs})
+            b = {"type": "para", "runs": runs}
+            if self.para_meta:
+                # the document's Title/Subtitle line: front matter, not a
+                # section of its own (see Site._split_and_slug)
+                b["doc_meta"] = True
+            self.blocks.append(b)
 
     # -- HTMLParser callbacks ----------------------------------------------
 
@@ -1107,6 +1133,8 @@ class ExportParser(HTMLParser):
             self.heading = (int(tag[1]), a.get("id"))
         elif tag == "p":
             self.flush_inline()
+            classes = (a.get("class") or "").split()
+            self.para_meta = "title" in classes or "subtitle" in classes
             self.para = True
         elif tag == "span":
             delta = {}
@@ -1179,6 +1207,7 @@ class ExportParser(HTMLParser):
                     self.blocks.append(b)
             self.flush_inline()
             self.para = False
+            self.para_meta = False
         elif tag == "span":
             self.pop_style()
         elif tag == "a":
@@ -2190,6 +2219,20 @@ def home_section_slug(site):
     return site.sections[0]["slug"] if site.sections else None
 
 
+def strip_own_heading(sec):
+    """The section's blocks without its own title heading (that heading is
+    already shown as the page title), skipping any leading document front
+    matter (a Title/Subtitle line) that precedes it."""
+    blocks = list(sec["blocks"])
+    i = 0
+    while i < len(blocks) and blocks[i].get("doc_meta"):
+        i += 1
+    if (i < len(blocks) and blocks[i]["type"] == "heading"
+            and blocks[i].get("heading_id") == sec.get("heading_id")):
+        del blocks[i]
+    return blocks
+
+
 def toc_href(home, slug, hid=None):
     """Href for a section (or one of its headings) in the outline."""
     if slug and slug == home:
@@ -2338,10 +2381,7 @@ def render_index(site):
         return page_template(site, site.title, sidebar_html(site), '<p>No content.</p>', None)
     first = site.sections[0]
     body = []
-    blocks = first["blocks"]
-    if (blocks and blocks[0]["type"] == "heading"
-            and blocks[0].get("heading_id") == first.get("heading_id")):
-        blocks = blocks[1:]
+    blocks = strip_own_heading(first)
     body.append('<div class="doc">')
     body.append(site.render_blocks(blocks))
     body.append('</div>')
@@ -2409,10 +2449,7 @@ def render_section_page(site, i, sec):
                 f'Open the original GDoc ↗</a></p>')
     # the page title is already shown as <h1>; skip the section's own
     # title heading block so it isn't repeated inside the body
-    blocks = sec["blocks"]
-    if (blocks and blocks[0]["type"] == "heading"
-            and blocks[0].get("heading_id") == sec.get("heading_id")):
-        blocks = blocks[1:]
+    blocks = strip_own_heading(sec)
     body.append('<div class="doc">')
     body.append(site.render_blocks(blocks))
     body.append('</div>')

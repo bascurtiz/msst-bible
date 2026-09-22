@@ -605,8 +605,10 @@ class Site:
             t = b["type"]
             if t == "para":
                 if not b.get("runs"):
-                    # deliberate blank line (an empty paragraph in the doc)
-                    out.append('<p class="gap">&nbsp;</p>')
+                    # deliberate blank line (an empty paragraph in the doc);
+                    # it keeps the anchor of the empty heading it came from
+                    hid = f' id="{attr(b["heading_id"])}"' if b.get("heading_id") else ""
+                    out.append(f'<p class="gap"{hid}>&nbsp;</p>')
                     continue
                 # demoted prose headings keep their anchor id
                 hid = f' id="{attr(b["heading_id"])}"' if b.get("heading_id") else ""
@@ -805,12 +807,18 @@ def parse_paragraph(p, ctx):
                 runs[-1] = {**runs[-1], "text": last.rstrip("\n")}
                 break
     if not runs:
-        # An empty plain paragraph is the doc author's deliberate blank line
+        # An empty paragraph is the doc author's deliberate blank line
         # (a second Enter in Google Docs) — keep it so the site mirrors the
         # doc's layout: one Enter = tight next line, two Enters = blank line.
-        if level or p.get("bullet"):
+        # That includes empty paragraphs that carry a heading style (Enter
+        # pressed while a heading style was active, e.g. at the top of the
+        # next page/block); only empty list items add no visible line. Empty
+        # Title/Subtitle paragraphs are dropped so they cannot break the
+        # document front-matter detection.
+        if p.get("bullet") or named in ("TITLE", "SUBTITLE"):
             return None
-        return {"type": "para", "runs": [], "blank": True}
+        return {"type": "para", "runs": [], "blank": True,
+                "heading_id": pstyle.get("headingId") if level else None}
     if p.get("bullet"):
         b = p["bullet"]
         return {
@@ -1054,6 +1062,16 @@ def class_style(cls, css_map):
     return d
 
 
+def inline_is_blank(runs):
+    """True when runs carry no visible content (no text, no image)."""
+    for r in runs:
+        if r.get("img"):
+            return False
+        if (r.get("text") or "").replace("\u00a0", " ").strip():
+            return False
+    return True
+
+
 class ExportParser(HTMLParser):
     """Parse the export HTML into the same block model as the API source."""
 
@@ -1193,6 +1211,20 @@ class ExportParser(HTMLParser):
         if self.skip_depth:
             return
         if tag in ("h1", "h2", "h3", "h4", "h5", "h6"):
+            if self.heading is not None and inline_is_blank(self.inline):
+                # A heading with no text at all is the doc author's deliberate
+                # blank line: pressing Enter while a heading style is active
+                # (e.g. at the top of the next page/block) leaves an empty
+                # heading behind. Keep it, so the site mirrors the doc's
+                # spacing instead of dropping the intended free line.
+                self.inline = []
+                b = {"type": "para", "runs": [],
+                     "heading_id": self.heading[1]}
+                if self.table is not None:
+                    self.table_cell.append(b)
+                else:
+                    self.flush_pending_list()
+                    self.blocks.append(b)
             self.flush_inline()
             self.heading = None
         elif tag == "p":

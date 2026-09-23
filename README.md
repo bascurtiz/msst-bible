@@ -4,9 +4,11 @@ A fast, lightweight static site mirror of the [MSST Bible Google Doc](https://do
 
 ## Features
 
-- **Fast loading** — one long, scrollable page per section instead of one 13MB document
+- **Fast loading** — one page per heading, so you load a section at a time instead of the whole 13MB document
+- **A titled URL for every heading** — pages nest the way the doc outlines them (`/de-reverb`); links minted before that change (`/#h.…`) are forwarded to the page that now owns the heading
 - **Dark mode** — default theme with light/dark toggle
-- **Collapsible TOC** — sidebar groups expand/collapse
+- **Full outline** — the sidebar mirrors the document's heading tree
+- **Link check** — the build fails (instead of shipping) if a doc edit breaks an internal link, a `#heading` anchor, or the generated markup (duplicate ids, unclosed tags)
 - **Search** — client-side full-text search
 - **Auto-updates** — a Cloudflare Worker cron regenerates on a schedule
 - **Free hosting** — Cloudflare Pages with HTTPS
@@ -155,6 +157,7 @@ msst-bible/
 │   └── deploy.yml          # GitHub Actions (auto-deploy)
 ├── .gitignore              # Excludes credentials & build artifacts
 ├── gdoc_site.py            # Main generator script
+├── check_links.py          # Fails the build if a link/anchor doesn't resolve
 ├── serve.py                # Local preview server
 ├── local_build.bat         # Windows quick build script
 ├── requirements.txt        # No dependencies — stdlib only
@@ -178,6 +181,16 @@ msst-bible/
 **Local build fails?**
 - Ensure Python 3.10+ is installed
 - Check that `auth.json` exists (run OAuth setup first if needed)
+
+**Deploy fails with `link check FAILED`?**
+- `python check_links.py --dir _site` reprints the report locally.
+- `missing anchor` / `missing file`: a doc edit broke something the mirror
+  links to — a heading or section was renamed/removed, or a page that
+  `data.json`/`anchors.json`/`sitemap.xml` still lists is gone. Fix the doc, or
+  the reference in `gdoc_site.py`.
+- `duplicate id` / `unclosed tag`: the generator emitted broken markup (two
+  elements sharing an `id`, or an element that is never closed) — fix the
+  rendering in `gdoc_site.py`.
 
 ## License
 

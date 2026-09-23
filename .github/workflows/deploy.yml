@@ -39,6 +39,15 @@ jobs:
             --base-url https://msst-bible.pages.dev/ \
             --out _site
 
+      # The doc is edited outside this repo, so a renamed heading, a deleted
+      # section or a retitled page can silently break the mirror's internal
+      # links and #heading anchors. Fail the deploy here instead of shipping
+      # dead links (a doc we can't link is worse than yesterday's snapshot).
+      # Also checks the generated markup: duplicate ids and unclosed tags
+      # break anchors and can hide whole sections from the browser.
+      - name: Check links, anchors + markup
+        run: python check_links.py --dir _site
+
       # wrangler's `pages deploy` errors (code 8000007) if the project
       # doesn't exist yet, so create it first. continue-on-error keeps the
       # step harmless once the project already exists on later runs.

@@ -2,9 +2,10 @@
 """gdoc_site.py — turn a big Google Doc into a fast, tiny static site.
 
 The Google Doc stays the source of truth. This script pulls it and renders a
-static site: one small page per top-level section, a sidebar table of
-contents (grouped by document tab), client-side search, working internal
-links and "edit this section" links back to Google Docs.
+static site with one page per heading — nested the way the document outlines
+them, so every heading has a titled URL of its own (`/de-reverb`) — plus a
+sidebar table of contents (grouped by document tab), client-side search,
+working internal links and "edit this section" links back to Google Docs.
 
 Sources
 -------
@@ -134,11 +135,6 @@ def nav_title(t, hid=None):
     return clean_nav_title(t)
 
 
-def nav_subs(subs):
-    """Sub-headings shown in the outline (OUTLINE_EXCLUDE ids are hidden)."""
-    return [x for x in (subs or []) if x.get("id") not in OUTLINE_EXCLUDE]
-
-
 def slugify(t):
     t = t.lower()
     t = re.sub(r"[^\w\s-]", "", t, flags=re.UNICODE)
@@ -156,6 +152,12 @@ def unique_slug(base, used, max_len=60):
         i += 1
     used.add(slug)
     return slug
+
+
+# Names the generator writes itself. A heading that slugifies to one of these
+# gets a "-2" suffix instead of clobbering that page (`index`, `contents`,
+# `404`) or shadowing the asset folder (`assets`).
+RESERVED_SLUGS = frozenset(("index", "contents", "404", "assets"))
 
 
 # ---------------------------------------------------------------------------
@@ -225,109 +227,26 @@ def parse_api_link(link):
     return None
 
 
-# Render each top-level section as one long, continuous page instead of
-# splitting oversized sections into many sub-pages. Kept well above even the
-# largest section in a typical mirror (the biggest in this doc is ~0.5 MB),
-# so sections only ever split if a document has truly pathological gobs.
-CHUNK_THRESHOLD = 5_000_000  # estimated HTML bytes per page before splitting
+def build_subs(section):
+    """Headings that live *inside* a page: everything except the page's own
+    title heading.
 
-
-def _runs_cost(runs):
-    n = 0
-    for r in runs:
-        n += 40 + len(r.get("text", ""))
-        if r.get("link"):
-            n += 100  # <a href="…">…</a> overhead
-        if r.get("img"):
-            n += 120
-    return n
-
-
-def estimate_blocks(blocks):
-    """Rough estimate of the rendered HTML size of a list of blocks."""
-    n = 0
-    for b in blocks:
-        t = b["type"]
-        if t in ("para", "heading"):
-            n += _runs_cost(b.get("runs", []))
-        elif t == "list":
-            for it in b.get("items", []):
-                n += _runs_cost(it.get("runs", []))
-        elif t == "table":
-            for row in b.get("rows", []):
-                for cell in row:
-                    n += estimate_blocks(cell)
-        elif t == "toc":
-            n += estimate_blocks(b.get("blocks", []))
-        elif t == "html":
-            n += len(b.get("html", ""))
-    return n
-
-
-def chunk_blocks(blocks, threshold=CHUNK_THRESHOLD):
-    """Split a list of blocks into pages at sub-headings when it gets big.
-
-    Returns a list of (blocks, depth): each page starts with the heading that
-    names it (the first page starts with the section's own heading). depth is
-    the heading level of the page's title minus 2 (0 for a section page).
-    """
-    if estimate_blocks(blocks) <= threshold:
-        return [(blocks, 0)]
-    counts = {}
-    for b in blocks:
-        if (b["type"] == "heading"
-                and not is_decorative_heading(text_of_runs(b["runs"]))):
-            counts[b["level"]] = counts.get(b["level"], 0) + 1
-    # h6 is too fine-grained to page on (it is used for list-like entries);
-    # splitting below h5 just creates one-line pages.
-    lvl = next((lv for lv in (3, 4, 5) if counts.get(lv, 0) >= 2), None)
-    if lvl is None:
-        return [(blocks, 0)]  # no useful sub-structure: keep as one page
-    pages = []
-    cur = None
-    for b in blocks:
-        if (b["type"] == "heading" and b["level"] == lvl
-                and not is_decorative_heading(text_of_runs(b["runs"]))):
-            if cur is not None:
-                pages.append(cur)
-            cur = [b]
-        else:
-            if cur is None:
-                cur = []
-            cur.append(b)
-    if cur is not None:
-        pages.append(cur)
-    out = []
-    for pg in pages:
-        for sub_blocks, _ in chunk_blocks(pg, threshold):
-            depth = 0
-            if sub_blocks and sub_blocks[0]["type"] == "heading":
-                depth = max(sub_blocks[0]["level"] - 2, 0)
-            out.append((sub_blocks, depth))
-    return out
-
-
-def build_subs(blocks):
-    """Sub-headings inside a page (everything except the page's own title).
-
-    Only *real* section headings are listed in the navigation outline. A
-    heading whose content is body-length prose (e.g. a news item or a
-    paragraph that was styled as a heading) is demoted to a paragraph during
-    normalization, and that demoted block intentionally does not become an
-    outline entry — matching Google's outline, which lists the document's
-    actual section titles but not the prose typed into heading styles. Its
-    anchor is still registered elsewhere for link/scroll resolution."""
+    Every real heading is its own page now, so the only headings left in a
+    page body are the ones the doc author hid from the outline
+    (OUTLINE_EXCLUDE) and spacer/separator headings. They are listed here so
+    their anchors stay known and so the search index can offer them as
+    in-page sub-heading hints. A heading whose content is body-length prose is
+    demoted to a paragraph during normalization and is intentionally not
+    listed — matching Google's outline, which lists the document's actual
+    section titles but not the prose typed into heading styles."""
     subs = []
-    for i, b in enumerate(blocks):
-        if i == 0 and b["type"] == "heading":
-            continue  # the page's own title heading
-        if b["type"] == "heading":
-            title = text_of_runs(b["runs"])
-            if not is_decorative_heading(title):
-                subs.append({"level": b["level"], "id": b.get("heading_id"),
-                             "title": title})
-        elif b["type"] == "heading" and not text_of_runs(b.get("runs", [])).strip():
-            continue  # empty heading (all line breaks) contributes no outline item
+    for b in section["blocks"]:
+        if b["type"] != "heading":
+            continue
+        if b.get("heading_id") and b["heading_id"] == section.get("heading_id"):
+            continue  # the page's own title heading (front matter may precede it)
+        subs.append({"level": b["level"], "id": b.get("heading_id"),
+                     "title": text_of_runs(b["runs"])})
     return subs
 
 
@@ -340,8 +259,8 @@ class Site:
         self.source = source
         self.tabs = [t for t in tabs if t.get("blocks")]
         self.sections = []
-        self.heading_map = {}       # heading id -> section
-        self.heading_tab_map = {}   # (tab id, heading id) -> section
+        self.heading_page = {}      # heading id -> (slug, fragment or None)
+        self.heading_tab_page = {}  # (tab id, heading id) -> (slug, fragment)
         self.tab_first = {}         # tab id -> slug of first section
         self.generated = time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime())
         self._split_and_slug()
@@ -349,119 +268,156 @@ class Site:
     # -- structure ----------------------------------------------------------
 
     @staticmethod
-    def _boundary_level(blocks):
-        # Prefer the smallest heading level that actually appears as a real
-        # (non-decorative) heading. For Google Docs, HEADING_1 maps to our
-        # level 2, so most docs split there; docs that only use Heading 2+
-        # still split correctly.
-        for lvl in (2, 3, 4, 5, 6):
-            for b in blocks:
-                if (b["type"] == "heading" and b["level"] == lvl
-                        and not is_decorative_heading(text_of_runs(b["runs"]))):
-                    return lvl
-        return 0
+    def _owns_page(b):
+        """True when this heading becomes a page of its own.
+
+        Every real heading does — that is what gives each outline entry a
+        titled URL. Two kinds of heading stay inline in their parent page and
+        keep only an anchor: spacer/separator headings, and the ones the doc
+        author flagged as outline noise (OUTLINE_EXCLUDE).
+        """
+        if b["type"] != "heading":
+            return False
+        if b.get("heading_id") in OUTLINE_EXCLUDE:
+            return False
+        return not is_decorative_heading(text_of_runs(b["runs"]))
 
     def _split_and_slug(self):
-        # 1) cut each tab into sections at its top-level headings
-        raw = []
+        """Cut the document into one page per heading.
+
+        Levels nest: a page's parent is the nearest preceding heading with a
+        smaller level, so the site mirrors the doc's outline and every heading
+        gets a titled URL of its own. The blocks between a heading and the next
+        heading belong to that heading's page, so text written above a deeper
+        heading stays with its nearest ancestor — which keeps the document's
+        opening (its front matter and the news section's intro) on the front
+        page instead of stranding it on a sub-page.
+        """
+        # names of pages/files the site itself writes: a heading that slugifies
+        # to one of these must not take the name over (`index`, `contents` and
+        # `404` would be overwritten, `assets` would shadow the asset folder)
+        used = set(RESERVED_SLUGS)
         for tab in self.tabs:
-            boundary = self._boundary_level(tab["blocks"])
+            stack = []      # [(level, section)] — the open ancestor pages
+            preamble = []   # blocks before this tab's first heading
             cur = None
             for b in tab["blocks"]:
-                if b["type"] == "heading" and b["level"] == boundary:
-                    title = text_of_runs(b["runs"])
-                    if is_decorative_heading(title):
-                        continue  # spacer / separator headings are dropped
-                    cur = {"tab": tab["id"], "tab_title": tab["title"],
-                           "title": title, "heading_id": b.get("heading_id"),
-                           "blocks": [b]}
-                    raw.append(cur)
-                else:
-                    if cur is None:  # preamble before the first heading
-                        cur = {"tab": tab["id"], "tab_title": tab["title"],
-                               "title": tab["title"], "heading_id": None,
-                               "blocks": []}
-                        raw.append(cur)
-                    cur["blocks"].append(b)
-
-        # 2) split oversized sections into multiple pages at sub-headings
-        used = set()
-        for sec in raw:
-            pages = chunk_blocks(sec["blocks"])
-            sec["slug"] = unique_slug(slugify(sec["title"]), used)
-            if sec["tab"] not in self.tab_first:
-                self.tab_first[sec["tab"]] = sec["slug"]
-            for i, (blocks, depth) in enumerate(pages):
-                if i == 0:
-                    s = sec
-                    s["blocks"] = blocks  # may have been trimmed by chunking
-                    s["subs"] = build_subs(blocks)
-                    s["parent"] = None
-                    s["depth"] = 0
-                else:
-                    title = text_of_runs(blocks[0]["runs"])
-                    s = {
-                        "tab": sec["tab"], "tab_title": sec["tab_title"],
-                        "title": title,
-                        "heading_id": blocks[0].get("heading_id"),
-                        "blocks": blocks, "subs": build_subs(blocks),
-                        "parent": sec["slug"], "depth": depth,
-                        "slug": unique_slug(sec["slug"] + "-" + slugify(title), used),
+                if not self._owns_page(b):
+                    if cur is None:
+                        preamble.append(b)
+                    else:
+                        cur["blocks"].append(b)
+                    continue
+                level = b["level"]
+                title = text_of_runs(b["runs"])
+                while stack and stack[-1][0] >= level:
+                    stack.pop()
+                parent = stack[-1][1] if stack else None
+                sec = {
+                    "tab": tab["id"], "tab_title": tab["title"],
+                    "title": title, "heading_id": b.get("heading_id"),
+                    "level": level, "blocks": [b], "subs": [],
+                    "parent": parent["slug"] if parent else None,
+                    "depth": max(level - 2, 0),
+                    "slug": unique_slug(slugify(title), used),
+                }
+                self.sections.append(sec)
+                stack.append((level, sec))
+                if tab["id"] not in self.tab_first:
+                    self.tab_first[tab["id"]] = sec["slug"]
+                cur = sec
+            if preamble:
+                # A document that opens with a Title/Subtitle line (its front
+                # matter) must not grow a near-empty front page titled after
+                # the site: the preamble joins the tab's first real page.
+                first = next((s for s in self.sections
+                              if s["tab"] == tab["id"]), None)
+                if first is None:  # a tab holding no headings at all
+                    first = {
+                        "tab": tab["id"], "tab_title": tab["title"],
+                        "title": tab["title"], "heading_id": None,
+                        "level": 0, "blocks": [], "subs": [], "parent": None,
+                        "depth": 0,
+                        "slug": unique_slug(slugify(tab["title"]), used),
                     }
-                self.sections.append(s)
+                    self.sections.append(first)
+                    self.tab_first.setdefault(tab["id"], first["slug"])
+                first["blocks"] = preamble + first["blocks"]
 
-        # 2b) A document that opens with a Title/Subtitle line (its front
-        # matter) must not grow a near-empty front page titled after the site:
-        # fold that preamble into the first real section, so the site starts
-        # at the doc's first real section and the index starts with it too.
-        if len(self.sections) > 1:
-            first = self.sections[0]
-            if (first.get("heading_id") is None and first["blocks"]
-                    and all(b.get("doc_meta") for b in first["blocks"])):
-                nxt = self.sections[1]
-                nxt["blocks"] = first["blocks"] + nxt["blocks"]
-                self.sections.pop(0)
-                self.tab_first[first["tab"]] = nxt["slug"]
-
-        # 3) heading id -> page map, for internal links
+        # heading id -> (page slug, fragment), for internal links. The fragment
+        # is None for the heading that titles its own page, so links to it use
+        # the page's titled URL; headings that stay inline in a page body keep
+        # their anchor. Insertion order (document order) decides collisions.
         for s in self.sections:
+            s["subs"] = build_subs(s)
             hid = s.get("heading_id")
             if hid:
-                self.heading_map.setdefault(hid, s)
-                self.heading_tab_map.setdefault((s["tab"], hid), s)
-            for sub in s.get("subs", []):
-                if sub.get("id"):
-                    self.heading_map.setdefault(sub["id"], s)
-                    self.heading_tab_map.setdefault((s["tab"], sub["id"]), s)
-            # demoted prose headings keep their anchors reachable
+                self.heading_page.setdefault(hid, (s["slug"], None))
+                self.heading_tab_page.setdefault((s["tab"], hid),
+                                                (s["slug"], None))
             for b in s["blocks"]:
-                if b["type"] == "para" and b.get("heading_id"):
-                    self.heading_map.setdefault(b["heading_id"], s)
-                    self.heading_tab_map.setdefault(
-                        (s["tab"], b["heading_id"]), s)
+                anchor = b.get("heading_id")
+                if anchor:
+                    self.heading_page.setdefault(anchor, (s["slug"], anchor))
+                    self.heading_tab_page.setdefault((s["tab"], anchor),
+                                                     (s["slug"], anchor))
 
     # -- link resolution ----------------------------------------------------
 
-    def heading_slug(self, hid, tab=None):
+    def heading_href(self, hid, tab=None):
+        """Link to a heading: its own titled page, or the page that holds it
+        plus its anchor when the heading stays inline in a page body."""
+        hit = None
         if tab:
-            s = self.heading_tab_map.get((tab, hid))
-            if s:
-                return s["slug"]
-        s = self.heading_map.get(hid)
-        return s["slug"] if s else None
+            hit = self.heading_tab_page.get((tab, hid))
+        if not hit:
+            hit = self.heading_page.get(hid)
+        if not hit:
+            return None
+        slug, frag = hit
+        return toc_href(home_section_slug(self), slug, frag)
 
     def tab_url(self, tab):
         slug = self.tab_first.get(tab)
         if slug:
             # the tab holding the front section is served from the site root
             return toc_href(home_section_slug(self), slug)
-        return "index.html"
+        return "/"
+
+    def pretty_own_page(self, u):
+        """Rewrite a hand-written link to one of the mirror's own pages into
+        the extension-less URL Cloudflare serves (`…/index.html` -> `/`).
+
+        The doc's author pastes the mirror's addresses into the doc, so they
+        arrive with `.html`, which the host 308-redirects — dropping the
+        suffix here saves every reader that hop. Links to other sites, and
+        paths we don't generate, are left exactly as written.
+        """
+        if u.netloc:
+            base = urllib.parse.urlsplit(getattr(self, "base_url", "") or "")
+            if not base.netloc or u.netloc.lower() != base.netloc.lower():
+                return None  # somebody else's site: not ours to rewrite
+        if not u.path.endswith(".html"):
+            return None
+        slug = u.path.rsplit("/", 1)[-1][:-len(".html")]
+        if slug == "index":
+            path = "/"
+        elif slug == "contents" or any(s["slug"] == slug
+                                       for s in self.sections):
+            path = "/" + slug
+        else:
+            return None
+        if u.query:
+            path += "?" + u.query
+        if u.fragment:
+            path += "#" + u.fragment
+        return path
 
     def resolve_url(self, url):
         url = clean_merged_url(url)
         u = urllib.parse.urlsplit(url)
         if u.scheme not in ("http", "https"):
-            return url
+            return self.pretty_own_page(u) or url
         if u.netloc in ("docs.google.com", "docs.googleusercontent.com") \
                 and u.path.startswith("/document/d/"):
             parts = u.path.split("/")
@@ -470,28 +426,21 @@ class Site:
                 tab = (q.get("tab") or [None])[0]
                 frag = u.fragment
                 if frag.startswith("heading="):
-                    hid = frag.split("=", 1)[1]
-                    slug = self.heading_slug(hid, tab)
-                    if slug:
-                        return toc_href(home_section_slug(self), slug, hid)
-                    return "index.html"
+                    return (self.heading_href(frag.split("=", 1)[1], tab)
+                            or "/")
                 if tab:
                     return self.tab_url(tab)
-                return "index.html"
-        return url
+                return "/"
+        return self.pretty_own_page(u) or url
 
     def resolve_run(self, raw):
         if raw is None:
             return None
         kind = raw[0]
         if kind == "heading":
-            hid, tab = raw[1], raw[2]
-            slug = self.heading_slug(hid, tab)
-            if slug:
-                return toc_href(home_section_slug(self), slug, hid)
-            return "index.html"
+            return self.heading_href(raw[1], raw[2]) or "/"
         if kind == "bookmark":
-            return self.tab_url(raw[1]) if raw[1] else "index.html"
+            return self.tab_url(raw[1]) if raw[1] else "/"
         if kind == "tab":
             return self.tab_url(raw[1])
         if kind == "url":
@@ -507,17 +456,17 @@ class Site:
             return self._title_index
         idx = {}
         for s in self.sections:
-            # register the section page itself under its title
+            # register the page itself under its title first, so a title that
+            # is both a page and an inline heading resolves to the page
             idx.setdefault(self._norm_title(s["title"]), (s["slug"], None))
-            for sub in s.get("subs", []):
-                if sub.get("id"):
-                    idx.setdefault(self._norm_title(sub["title"]),
-                                   (s["slug"], sub["id"]))
-            # demoted prose headings keep their anchors reachable too
+            # inline headings and demoted prose headings keep their anchors
             for b in s["blocks"]:
-                if b["type"] == "para" and b.get("heading_id"):
-                    idx.setdefault(self._norm_title(text_of_runs(b["runs"])),
-                                   (s["slug"], b["heading_id"]))
+                if b["type"] not in ("heading", "para"):
+                    continue
+                if b.get("heading_id"):
+                    idx.setdefault(self._norm_title(
+                        text_of_runs(b.get("runs", []))),
+                        (s["slug"], b["heading_id"]))
         self._title_index = idx
         return idx
 
@@ -587,11 +536,12 @@ class Site:
                 style.append(f"background-color:{r['bg']}")
             if style:
                 t = f'<span style="{"; ".join(style)}">{t}</span>'
-            href = self.resolve_run(r.get("link"))
-            if href == "index.html" and r.get("link") and r["link"][0] == "heading":
+            link = r.get("link")
+            href = self.resolve_run(link)
+            if link and link[0] == "heading" and not self.heading_href(link[1], link[2]):
                 # stale manual-TOC links target an id that no longer exists;
                 # rescue them by matching the link's text to a live heading
-                alt = self.resolve_stale_heading(r["link"][1], r.get("text", ""))
+                alt = self.resolve_stale_heading(link[1], r.get("text", ""))
                 if alt:
                     href = alt
             if href:
@@ -1729,6 +1679,14 @@ h1 { font-size: 26px; line-height: 1.3; margin: 4px 0 10px; font-weight: 400; }
 .card-children a { display: block; white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; padding: 1px 0; }
 
+.section-list { margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--border); }
+.section-list-h { display: block; font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+  margin-bottom: 6px; }
+.section-list ul { list-style: none; margin: 0; padding: 0; columns: 2; }
+.section-list li { margin: 3px 0; break-inside: avoid; }
+@media (max-width: 700px) { .section-list ul { columns: 1; } }
+.empty-note { color: var(--muted); font-style: italic; }
 .index-link { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); }
 .index-link a { color: var(--accent); font-size: 14px; }
 .pager { display: flex; justify-content: space-between; gap: 10px;
@@ -1991,7 +1949,7 @@ APP_JS = """\
         a.className = "sr";
         var aid = anchorAt(s.full || "", s, tokens);
         var qs = "?q=" + encodeURIComponent(input.value.trim());
-        a.href = s.slug + ".html" + qs + (aid ? "#" + aid : "");
+        a.href = s.slug + qs + (aid ? "#" + aid : "");
         var t = document.createElement("span");
         t.className = "t";
         t.innerHTML = mark(s.title, tokens);
@@ -2042,6 +2000,10 @@ APP_JS = """\
           if (findWord(title, val, 0) === 0) score -= 200;
           else if (title.indexOf(val) !== -1) score -= 100;
           score += findWord(s._hay, tokens[0], 0);
+          // a page carrying more hits is more relevant than one that only
+          // mentions the term once, which matters now that every heading is
+          // its own (small) page
+          score -= countTokens(s.full || "", tokens);
           out.push({ s: s, score: score });
         }
       });
@@ -2117,6 +2079,27 @@ APP_JS = """\
   window.addEventListener("hashchange", syncNav);
   syncNav();
 })();
+
+(function () {
+  // --- forwarding for pre-split heading links ------------------------------
+  // Headings used to render inside their section's page, so an old link such
+  // as example.com/#h.abc123 points at the document root. Every heading is a
+  // page of its own now; when the anchor is not on the page we landed on, look
+  // it up in the generated map and forward, keeping the anchor.
+  var hash = location.hash;
+  if (!hash || hash.length < 2 || hash.indexOf("#h.") !== 0) return;
+  var id = hash.slice(1);
+  if (document.getElementById(id)) return;
+  fetch("anchors.json").then(function (r) {
+    return r.ok ? r.json() : null;
+  }).then(function (map) {
+    var hit = map && map[id];
+    if (!hit) return;
+    var here = document.body.getAttribute("data-page") || "";
+    if (hit.slug === here) return;  // already on the page that owns it
+    location.replace(hit.href);
+  }).catch(function () {});
+})();
 """
 
 
@@ -2143,7 +2126,8 @@ def render_404_page(site):
             "(function(){\n"
             "  var seg = location.pathname.replace(/.*\\//, '').replace(/\\.html$/, '');\n"
             "  if (/^edit-/.test(seg)) {\n"
-            "    var target = '%(latest)s.html' + location.search + location.hash;\n"
+            "    var dir = location.pathname.replace(/\\/[^/]*$/, '/');\n"
+            "    var target = dir + '%(latest)s' + location.search + location.hash;\n"
             "    var msg = document.getElementById('msg');\n"
             "    if (msg) msg.textContent =\n"
             "      'This daily news section was renamed \u2014 redirecting to the current one\u2026';\n"
@@ -2177,7 +2161,7 @@ def render_404_page(site):
 <div class="card">
   <h1>404</h1>
   <p id="msg">This page doesn't exist &mdash; it may have been renamed in the document.</p>
-  <p><img src="favicon.png" alt="" width="20" height="20"><a href="contents.html">Open the index</a></p>
+  <p><img src="favicon.png" alt="" width="20" height="20"><a href="contents">Open the index</a></p>
 </div>
 <script>
 %(redirect_js)s
@@ -2205,10 +2189,10 @@ def page_template(site, title, sidebar, body, active_slug):
 {apple_icon}<link rel="stylesheet" href="assets/style.css">
 <script>(function(){{var t;try{{t=localStorage.getItem("doc-theme");}}catch(e){{}}document.documentElement.setAttribute("data-theme",t||"dark");}})();</script>
 </head>
-<body>
+<body data-page="{attr(active_slug or '')}">
 <header class="topbar">
 <button id="nav-toggle" aria-label="Toggle navigation">☰</button>
-<a class="brand" href="index.html"><img class="brand-logo"
+<a class="brand" href="/"><img class="brand-logo"
   src="favicon.png" alt="site logo" width="22" height="22"><span
   class="brand-text">{esc(site.title)}</span></a>
 <input id="search" type="search" placeholder="Search this document…" autocomplete="off">
@@ -2224,20 +2208,6 @@ def page_template(site, title, sidebar, body, active_slug):
 </body>
 </html>
 """
-
-
-def _sub_tree(subs):
-    """Turn a flat sub-heading list (level/id/title) into nested nodes."""
-    root = {"level": 0, "children": []}
-    stack = [(0, root)]
-    for sub in subs:
-        node = {"level": sub["level"], "id": sub.get("id"),
-                "title": sub["title"], "children": []}
-        while stack and stack[-1][0] >= node["level"]:
-            stack.pop()
-        stack[-1][1]["children"].append(node)
-        stack.append((node["level"], node))
-    return root["children"]
 
 
 def home_section_slug(site):
@@ -2266,35 +2236,44 @@ def strip_own_heading(sec):
 
 
 def toc_href(home, slug, hid=None):
-    """Href for a section (or one of its headings) in the outline."""
+    """Href for a page (or one of its headings) in the outline.
+
+    Extension-less, which is the URL Cloudflare Pages actually serves: it
+    308-redirects `/page.html` to `/page`, so linking the `.html` form would
+    cost every click a redirect hop.
+    """
     if slug and slug == home:
         return f"/#{hid}" if hid else "/"
-    return f"{slug}.html#{hid}" if hid else f"{slug}.html"
+    return f"{slug}#{hid}" if hid else slug
 
 
-def _render_toc_nodes(nodes, slug, home=None):
-    """Render nested, fully-expanded tree `<li>` items for sub-heading nodes."""
-    out = []
-    for n in nodes:
-        href = toc_href(home, slug, n.get("id"))
-        label = f'<a href="{href}">{esc(nav_title(n["title"], n.get("id")))}</a>'
-        if n["children"]:
-            # flat, fully-expanded outline (no collapse caret) so every tab is
-            # visible at once, like Google's "Document tabs".
-            out.append(f'<li class="toc-item">{label}'
-                       f'<ul class="toc-subs open">'
-                       f'{_render_toc_nodes(n["children"], slug, home)}</ul></li>')
-        else:
-            out.append(f'<li>{label}</li>')
-    return "".join(out)
+def _children_map(site):
+    """parent slug (None for the roots) -> child pages, document order."""
+    children = {}
+    for s in site.sections:
+        children.setdefault(s.get("parent"), []).append(s)
+    return children
+
+
+def _outline_node(site, s, home, children, active_slug, depth):
+    """One nested, fully-expanded outline entry (like Google's "Document
+    tabs"): the page itself plus its child pages, recursively."""
+    cls = ' current' if s["slug"] == active_slug else ""
+    root = ' toc-section' if depth == 0 else ' toc-sub'
+    link = (f'<a class="{root.strip()}{cls}" href="{toc_href(home, s["slug"])}">'
+            f'{esc(nav_title(s["title"], s.get("heading_id")))}</a>')
+    kids = children.get(s["slug"], [])
+    if not kids:
+        return f'<li>{link}</li>'
+    inner = "".join(_outline_node(site, k, home, children, active_slug, depth + 1)
+                    for k in kids)
+    return (f'<li class="toc-item">{link}'
+            f'<ul class="toc-subs open">{inner}</ul></li>')
 
 
 def sidebar_html(site, active_slug=None):
     home = home_section_slug(site)
-    children = {}
-    for s in site.sections:
-        if s.get("parent"):
-            children.setdefault(s["parent"], []).append(s)
+    children = _children_map(site)
     p = ['<div class="sidebar-inner">']
     if len(site.tabs) > 1:
         p.append('<div class="tab-chips">')
@@ -2305,8 +2284,7 @@ def sidebar_html(site, active_slug=None):
         p.append('</div>')
     p.append('<ul class="toc">')
     for t in site.tabs:
-        roots = [s for s in site.sections
-                 if s["tab"] == t["id"] and not s.get("parent")]
+        roots = [s for s in children.get(None, []) if s["tab"] == t["id"]]
         if not roots:
             continue
         # The first tab corresponds to the front/index page, so label its TOC
@@ -2314,29 +2292,10 @@ def sidebar_html(site, active_slug=None):
         label = "INDEX" if t is site.tabs[0] else t["title"]
         p.append(f'<li class="toc-group"><span class="toc-tab">{esc(label)}</span><ul>')
         for s in roots:
-            cls = ' current' if s["slug"] == active_slug else ""
-            link = (f'<a class="toc-section{cls}" href="{toc_href(home, s["slug"])}"'
-                     f'>{esc(nav_title(s["title"], s.get("heading_id")))}</a>')
-            kids = [k for k in children.get(s["slug"], [])
-                    if k.get("heading_id") not in OUTLINE_EXCLUDE]
-            subs = nav_subs(s.get("subs", []))
-            if kids or subs:
-                # a flat, always-expanded outline (no collapse caret),
-                # mirroring Google's "Document tabs".
-                p.append(f'<li class="toc-item">{link}')
-                p.append('<ul class="toc-subs open">')
-                for k in kids:
-                    ccls = ' current' if k["slug"] == active_slug else ""
-                    p.append(f'<li><a class="toc-sub{ccls}" href="{toc_href(home, k["slug"])}"'
-                             f'>{esc(nav_title(k["title"], k.get("heading_id")))}</a></li>')
-                p.append(_render_toc_nodes(_sub_tree(subs), s["slug"], home))
-
-                p.append('</ul></li>')
-            else:
-                p.append(f'<li class="toc-item">{link}</li>')
+            p.append(_outline_node(site, s, home, children, active_slug, 0))
         p.append('</ul></li>')
     p.append('</ul>')
-    p.append(f'<div class="sidebar-foot"><a href="index.html">Index</a> · '
+    p.append(f'<div class="sidebar-foot"><a href="/">Index</a> · '
              f'<a href="https://docs.google.com/document/d/{attr(site.doc_id)}/edit">Google Doc ↗</a></div>')
     p.append('</div>')
     return "".join(p)
@@ -2408,57 +2367,110 @@ def section_full_text(section):
 # site writing
 # ---------------------------------------------------------------------------
 
+def page_head(site, i, sec):
+    """Breadcrumb chain, page heading (with its anchor id) and meta line."""
+    home = home_section_slug(site)
+    by_slug = {s["slug"]: s for s in site.sections}
+    chain, slug = [], sec.get("parent")
+    while slug:
+        p = by_slug.get(slug)
+        if p is None:
+            break
+        chain.append(p)
+        slug = p.get("parent")
+    crumbs = [f'<a href="/">{esc(site.title)}</a>']
+    if sec["tab_title"] and sec["tab_title"] != site.title:
+        crumbs.append(f'<span>{esc(sec["tab_title"])}</span>')
+    for p in reversed(chain):
+        crumbs.append(f'<a href="{toc_href(home, p["slug"])}">'
+                      f'{esc(nav_title(p["title"], p.get("heading_id")))}</a>')
+    out = ['<nav class="crumbs">' + " › ".join(crumbs) + '</nav>']
+    hid = sec.get("heading_id")
+    idattr = f' id="{attr(hid)}"' if hid else ""
+    out.append(f'<h1{idattr}>{esc(sec["title"])}</h1>')
+    out.append(f'<p class="meta">Page {i + 1} of {len(site.sections)} · '
+               f'<a href="{attr(site.edit_url(sec))}" target="_blank" '
+               f'rel="noopener">Open the original GDoc ↗</a></p>')
+    return out
+
+
+def page_pager(site, i, home):
+    """Prev/next links walking the document in reading order."""
+    total = len(site.sections)
+    pager = ['<nav class="pager">']
+    if i > 0:
+        prev = site.sections[i - 1]
+        pager.append(f'<a class="prev" href="{toc_href(home, prev["slug"])}">'
+                     f'← {esc(nav_title(prev["title"], prev.get("heading_id")))}</a>')
+    if i + 1 < total:
+        nxt = site.sections[i + 1]
+        pager.append(f'<a class="next" href="{toc_href(home, nxt["slug"])}">'
+                     f'{esc(nav_title(nxt["title"], nxt.get("heading_id")))} →</a>')
+    pager.append('</nav>')
+    return "".join(pager)
+
+
+def section_list_html(site, sec, home):
+    """Links to the pages directly under this one.
+
+    Empty when the page has no child pages, so a page whose heading introduces
+    nothing shows no generated list at all."""
+    kids = [s for s in site.sections if s.get("parent") == sec["slug"]]
+    if not kids:
+        return []
+    out = ['<nav class="section-list"><span class="section-list-h">'
+           'In this section</span><ul>']
+    for k in kids:
+        out.append(f'<li><a href="{toc_href(home, k["slug"])}">'
+                   f'{esc(nav_title(k["title"], k.get("heading_id")))}</a></li>')
+    out.append('</ul></nav>')
+    return out
+
+
+def page_body_html(site, sec):
+    """The page's own text. A heading can legitimately have none of its own
+    (the doc has a few such titles); say so instead of showing a blank page."""
+    blocks = strip_own_heading(sec)
+    if not blocks:
+        return ['<p class="empty-note">This heading has no text of its own in '
+                'the document.</p>']
+    return ['<div class="doc">', site.render_blocks(blocks), '</div>']
+
+
 def render_index(site):
+    """The front page: the document's opening section (its front matter and
+    its own text) plus links to the sections directly under it."""
     if not site.sections:
         return page_template(site, site.title, sidebar_html(site), '<p>No content.</p>', None)
+    home = home_section_slug(site)
     first = site.sections[0]
-    body = []
-    blocks = strip_own_heading(first)
-    body.append('<div class="doc">')
-    body.append(site.render_blocks(blocks))
-    body.append('</div>')
-    body.append('<div class="index-link"><a href="contents.html">Full table of contents →</a></div>')
+    body = page_head(site, 0, first)
+    body.extend(page_body_html(site, first))
+    body.extend(section_list_html(site, first, home))
+    body.append('<div class="index-link"><a href="contents">Full table of contents →</a></div>')
     return page_template(site, site.title, sidebar_html(site, first["slug"]),
                          chr(10).join(body), first["slug"])
 
 
 def render_contents(site):
-    """The index page: the full document outline (every heading, nested),
+    """The index page: every page of the document, nested in reading order,
     mirroring the Google Doc's "Document tabs" panel."""
     home = home_section_slug(site)
-    children = {}
-    for s in site.sections:
-        if s.get("parent"):
-            children.setdefault(s["parent"], []).append(s)
+    children = _children_map(site)
     body = ['<h1>Contents</h1>']
     body.append('<p class="outline-hint">Every heading in the document, in reading '
-                'order. Expand a group to reveal its sub-headings.</p>')
+                'order — each one is a page of its own.</p>')
     body.append('<ul class="toc toc-full">')
     multi = len(site.tabs) > 1
     for t in site.tabs:
-        roots = [s for s in site.sections
-                 if s["tab"] == t["id"] and not s.get("parent")]
+        roots = [s for s in children.get(None, []) if s["tab"] == t["id"]]
         if not roots:
             continue
         if multi:
             body.append(f'<li class="toc-group"><span class="toc-tab">'
                         f'{esc(t["title"])}</span><ul class="toc-subs open">')
         for s in roots:
-            link = (f'<a class="toc-section" href="{toc_href(home, s["slug"])}">'
-                    f'{esc(nav_title(s["title"], s.get("heading_id")))}</a>')
-            inner = _render_toc_nodes(_sub_tree(nav_subs(s.get("subs", []))),
-                                      s["slug"], home)
-            for k in children.get(s["slug"], []):
-                if k.get("heading_id") in OUTLINE_EXCLUDE:
-                    continue  # hidden from the index outline
-
-                inner = (f'<li><a href="{toc_href(home, k["slug"])}">'
-                         f'{esc(nav_title(k["title"], k.get("heading_id")))}</a></li>' + inner)
-            if inner.strip():
-                body.append(f'<li class="toc-item">{link}'
-                            f'<ul class="toc-subs open">{inner}</ul></li>')
-            else:
-                body.append(f'<li class="toc-item">{link}</li>')
+            body.append(_outline_node(site, s, home, children, None, 0))
         if multi:
             body.append('</ul></li>')
     body.append('</ul>')
@@ -2466,38 +2478,30 @@ def render_contents(site):
 
 
 def render_section_page(site, i, sec):
-    total = len(site.sections)
     home = home_section_slug(site)
-    body = [f'<nav class="crumbs"><a href="index.html">{esc(site.title)}</a> › '
-            f'<span>{esc(sec["tab_title"])}</span>'
-            + (f' › <a href="{toc_href(home, sec["parent"])}">'
-               + esc(next((s["title"] for s in site.sections
-                           if s["slug"] == sec["parent"]), sec["parent"]))
-               + '</a>' if sec.get("parent") else '')
-            + '</nav>']
-    body.append(f'<h1>{esc(sec["title"])}</h1>')
-    body.append(f'<p class="meta">Page {i + 1} of {total} · '
-                f'<a href="{attr(site.edit_url(sec))}" target="_blank" rel="noopener">'
-                f'Open the original GDoc ↗</a></p>')
-    # the page title is already shown as <h1>; skip the section's own
-    # title heading block so it isn't repeated inside the body
-    blocks = strip_own_heading(sec)
-    body.append('<div class="doc">')
-    body.append(site.render_blocks(blocks))
-    body.append('</div>')
-    prev = site.sections[i - 1] if i > 0 else None
-    nxt = site.sections[i + 1] if i + 1 < total else None
-    pager = ['<nav class="pager">']
-    if prev:
-        pager.append(f'<a class="prev" href="{toc_href(home, prev["slug"])}">'
-                     f'← {esc(prev["title"])}</a>')
-    if nxt:
-        pager.append(f'<a class="next" href="{toc_href(home, nxt["slug"])}">'
-                     f'{esc(nxt["title"])} →</a>')
-    pager.append('</nav>')
-    body.append("".join(pager))
+    body = page_head(site, i, sec)
+    # the page title is already shown as <h1>; skip the page's own title
+    # heading block so it isn't repeated inside the body
+    body.extend(page_body_html(site, sec))
+    body.extend(section_list_html(site, sec, home))
+    body.append(page_pager(site, i, home))
     return page_template(site, f"{sec['title']} — {site.title}",
                          sidebar_html(site, sec["slug"]), "\n".join(body), sec["slug"])
+
+
+def anchors_json(site):
+    """heading id -> the page (and anchor) that owns it.
+
+    Headings used to live inside their section's page, so a shared
+    `example.com/#h.xyz` link pointed at the document root. Now that every
+    heading is a page, such a link can land on a page where the anchor no
+    longer exists; the client fetches this map and forwards it.
+    """
+    home = home_section_slug(site)
+    out = {}
+    for hid, (slug, _frag) in site.heading_page.items():
+        out[hid] = {"slug": slug, "href": toc_href(home, slug, hid)}
+    return json.dumps(out, ensure_ascii=False)
 
 
 def data_json(site):
@@ -2544,7 +2548,9 @@ def write_seo_files(site, out, base_url):
     base_url = base_url.rstrip("/")
     stamp = _rfc2822()
 
-    urls = ["index.html"] + [s["slug"] + ".html" for s in site.sections]
+    # extension-less, matching the URLs Cloudflare Pages serves (it redirects
+    # the .html form), so the sitemap lists canonical URLs
+    urls = [""] + [s["slug"] for s in site.sections]
     locs = "\n".join(
         "  <url><loc>%s</loc></url>" % _esc_xml(base_url + "/" + u)
         for u in urls)
@@ -2554,9 +2560,12 @@ def write_seo_files(site, out, base_url):
     with open(os.path.join(out, "sitemap.xml"), "w", encoding="utf-8") as f:
         f.write(sitemap)
 
+    # the feed carries the top-level sections only: one entry per page would
+    # bury subscribers under the document's whole heading tree
+    feed_sections = [s for s in site.sections if not s.get("parent")]
     items = []
-    for s in site.sections:
-        loc = base_url + "/" + s["slug"] + ".html"
+    for s in feed_sections or site.sections:
+        loc = base_url + "/" + s["slug"]
         desc = _esc_xml((s.get("text") or "")[:300])
         items.append(
             "  <item>\n"
@@ -2623,6 +2632,11 @@ def write_site(site, out):
             f.write(render_section_page(site, i, sec))
     with open(os.path.join(out, "data.json"), "w", encoding="utf-8") as f:
         f.write(data_json(site))
+    # heading id -> the page that now owns that heading, so a link minted
+    # before every heading became its own page (a bare /#h.… fragment) can
+    # still be forwarded to the right page by the client
+    with open(os.path.join(out, "anchors.json"), "w", encoding="utf-8") as f:
+        f.write(anchors_json(site))
     if write_seo_files(site, out, getattr(site, "base_url", "")):
         print("wrote:      sitemap.xml, feed.xml")
     else:

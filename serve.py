@@ -15,7 +15,7 @@ import subprocess
 import sys
 import threading
 import time
-from functools import partial
+import urllib.parse
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -42,6 +42,19 @@ def main():
 
         def log_message(self, fmt, *m):
             pass  # keep the console quiet
+
+        def send_head(self):
+            # Cloudflare Pages serves the extension-less URL (`/de-reverb`
+            # from `de-reverb.html`) and redirects the .html form to it. The
+            # generated site links the extension-less form, so mirror that
+            # here — otherwise every link 404s in the local preview.
+            url = urllib.parse.urlsplit(self.path)
+            if not url.path.endswith("/") \
+                    and not os.path.exists(self.translate_path(self.path)):
+                pretty = url.path + ".html"
+                if os.path.exists(self.translate_path(pretty)):
+                    self.path = pretty + ("?" + url.query if url.query else "")
+            return super().send_head()
 
     try:
         srv = ThreadingHTTPServer((args.host, args.port), Handler)

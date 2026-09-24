@@ -1976,7 +1976,10 @@ APP_JS = """\
         a.className = "sr";
         var aid = anchorAt(s.full || "", s, tokens);
         var qs = "?q=" + encodeURIComponent(input.value.trim());
-        a.href = s.slug + qs + (aid ? "#" + aid : "");
+        // the front section is served from the site root, which is its
+        // canonical URL; every other page uses its own slug
+        a.href = (s.slug === (data && data.home) ? "/" : s.slug)
+          + qs + (aid ? "#" + aid : "");
         var t = document.createElement("span");
         t.className = "t";
         t.innerHTML = mark(s.title, tokens);
@@ -2145,24 +2148,28 @@ def render_404_page(site):
     """A real 404 page. Without one, Cloudflare Pages serves the homepage
     (HTTP 200) for any unknown path, so a link shared to the daily-renamed
     'edit. DD.MM.YY' news section silently shows the wrong snapshot. This
-    page forwards such dated links to the news page, which keeps a stable
-    URL, so the forward target no longer changes daily. The #heading anchor
-    is kept on the way through (heading ids survive the daily rename)."""
+    page forwards such dated links to the news section's page, which keeps a
+    stable URL, so the forward target no longer changes daily. The #heading
+    anchor is kept on the way through (heading ids survive the rename)."""
     news = news_section_slug(site)
     if news:
+        # the news section is the site's front page, so it forwards to the
+        # root; for a document where it sits elsewhere, to its own page
+        to = ("dir" if news == home_section_slug(site)
+              else "dir + '%s'" % news)   # `dir` already ends in a slash
         redirect_js = (
             "(function(){\n"
             "  var seg = location.pathname.replace(/.*\\//, '').replace(/\\.html$/, '');\n"
             "  if (/^edit-/.test(seg)) {\n"
             "    var dir = location.pathname.replace(/\\/[^/]*$/, '/');\n"
-            "    var target = dir + '%(news)s' + location.search + location.hash;\n"
+            "    var target = %(to)s + location.search + location.hash;\n"
             "    var msg = document.getElementById('msg');\n"
             "    if (msg) msg.textContent =\n"
             "      'This daily news section was renamed \u2014 redirecting to the current one\u2026';\n"
             "    setTimeout(function(){ location.replace(target); }, 300);\n"
             "  }\n"
             "})();"
-        ) % {"news": news}
+        ) % {"to": to}
     else:
         redirect_js = ""
     return """<!doctype html>
@@ -2191,16 +2198,31 @@ def render_404_page(site):
   <p id="msg">This page doesn't exist &mdash; it may have been renamed in the document.</p>
   <p><img src="favicon.png" alt="" width="20" height="20"><a href="contents">Open the index</a></p>
 </div>
-<script>
-%(redirect_js)s
-</script>
-</body>
+%(script)s</body>
 </html>
-""" % {"redirect_js": redirect_js}
+""" % {"script": (f"<script>\n{redirect_js}\n</script>\n"
+                                     if redirect_js else "")}
 
 
-def page_template(site, title, sidebar, body, active_slug):
+def canonical_url(site, slug):
+    """The one address that should be indexed for a page.
+
+    The news section is also what the site serves from its root, so its own
+    page (`/news`) declares `/` as canonical instead of competing with it,
+    and neither the sitemap nor the feed advertises the second URL.
+    """
+    base = (getattr(site, "base_url", "") or "").rstrip("/")
+    if not base or not slug:
+        return ""
+    if slug == home_section_slug(site):
+        return base + "/"
+    return base + "/" + slug
+
+
+def page_template(site, title, sidebar, body, active_slug, canon_slug=None):
     meta = f"{len(site.sections)} sections · generated {site.generated}"
+    canon = canonical_url(site, active_slug if canon_slug is None else canon_slug)
+    canon_link = f'<link rel="canonical" href="{attr(canon)}">\n' if canon else ""
     feed_link = ('<link rel="alternate" type="application/rss+xml" title="RSS feed" '
                  'href="feed.xml">\n') if getattr(site, "base_url", "") else ""
     gsc_meta = (f'<meta name="google-site-verification" '
@@ -2213,7 +2235,7 @@ def page_template(site, title, sidebar, body, active_slug):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(title)}</title>
-{feed_link}{gsc_meta}<link rel="icon" href="favicon.ico">
+{canon_link}{feed_link}{gsc_meta}<link rel="icon" href="favicon.ico">
 {apple_icon}<link rel="stylesheet" href="assets/style.css">
 <script>(function(){{var t;try{{t=localStorage.getItem("doc-theme");}}catch(e){{}}document.documentElement.setAttribute("data-theme",t||"dark");}})();</script>
 </head>
@@ -2502,7 +2524,8 @@ def render_contents(site):
         if multi:
             body.append('</ul></li>')
     body.append('</ul>')
-    return page_template(site, site.title, sidebar_html(site), "\n".join(body), None)
+    return page_template(site, site.title, sidebar_html(site), "\n".join(body),
+                         None, canon_slug="contents")
 
 
 def render_section_page(site, i, sec):
@@ -2538,6 +2561,9 @@ def data_json(site):
         "doc": site.doc_id,
         "generated": site.generated,
         "source": site.source,
+        # the section served from the site root: search links to it use `/`
+        # rather than its own slug, which is only an alias
+        "home": home_section_slug(site) or "",
         "tabs": [{"id": t["id"], "title": t["title"]} for t in site.tabs],
         "sections": [
             {
@@ -2576,9 +2602,12 @@ def write_seo_files(site, out, base_url):
     base_url = base_url.rstrip("/")
     stamp = _rfc2822()
 
-    # extension-less, matching the URLs Cloudflare Pages serves (it redirects
-    # the .html form), so the sitemap lists canonical URLs
-    urls = [""] + [s["slug"] for s in site.sections]
+    # Extension-less, matching the URLs Cloudflare Pages serves (it redirects
+    # the .html form), so the sitemap lists canonical URLs — one per page.
+    # The front section's own page is left out: it is the same content as the
+    # root, which is listed first.
+    home = home_section_slug(site)
+    urls = [""] + [s["slug"] for s in site.sections if s["slug"] != home]
     locs = "\n".join(
         "  <url><loc>%s</loc></url>" % _esc_xml(base_url + "/" + u)
         for u in urls)
@@ -2593,7 +2622,7 @@ def write_seo_files(site, out, base_url):
     feed_sections = [s for s in site.sections if not s.get("parent")]
     items = []
     for s in feed_sections or site.sections:
-        loc = base_url + "/" + s["slug"]
+        loc = base_url + ("/" if s["slug"] == home else "/" + s["slug"])
         desc = _esc_xml((s.get("text") or "")[:300])
         # The news page keeps one stable URL, but its heading is retitled every
         # day, so its link still lands somewhere permanent. Its guid has to move

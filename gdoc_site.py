@@ -160,6 +160,18 @@ def unique_slug(base, used, max_len=60):
 RESERVED_SLUGS = frozenset(("index", "contents", "404", "assets"))
 
 
+# The doc author renames the news section in place every day (`edit. DD.MM.YY`),
+# so a slug taken from that heading would move the page's URL every morning and
+# churn its sitemap entry. Such a section keeps this stable slug instead: the
+# date stays in the visible title, where readers expect it, and links minted to
+# an older dated URL are forwarded to it by 404.html.
+#
+# Such a section is recognised by the slug its heading would have got: `edit.`,
+# `Edit–`, `edit ` and so on all reduce to `edit-<digits>`.
+NEWS_SLUG = "news"
+DATED_SLUG_RE = re.compile(r"^edit-\d+$")
+
+
 # ---------------------------------------------------------------------------
 # link resolution
 # ---------------------------------------------------------------------------
@@ -313,13 +325,20 @@ class Site:
                 while stack and stack[-1][0] >= level:
                     stack.pop()
                 parent = stack[-1][1] if stack else None
+                # a dated news heading (`edit. 23.09.26`) keeps a stable slug
+                # rather than one that changes with the date in its title
+                slug_base = slugify(title)
+                dated_news = bool(DATED_SLUG_RE.match(slug_base))
+                if dated_news:
+                    slug_base = NEWS_SLUG
                 sec = {
                     "tab": tab["id"], "tab_title": tab["title"],
                     "title": title, "heading_id": b.get("heading_id"),
                     "level": level, "blocks": [b], "subs": [],
                     "parent": parent["slug"] if parent else None,
                     "depth": max(level - 2, 0),
-                    "slug": unique_slug(slugify(title), used),
+                    "slug": unique_slug(slug_base, used),
+                    "dated_news": dated_news,
                 }
                 self.sections.append(sec)
                 stack.append((level, sec))
@@ -405,6 +424,14 @@ class Site:
         elif slug == "contents" or any(s["slug"] == slug
                                        for s in self.sections):
             path = "/" + slug
+        elif DATED_SLUG_RE.match(slug):
+            # a link the doc still carries to an older daily news URL: the
+            # section keeps the stable slug now, so point it there
+            news = news_section_slug(self)
+            if news is None:
+                return None
+            home = home_section_slug(self)
+            path = "/" if news == home else "/" + news
         else:
             return None
         if u.query:
@@ -2103,38 +2130,39 @@ APP_JS = """\
 """
 
 
-def _latest_edit_slug(site):
-    """Newest dated news-section slug (e.g. 'edit-170926'). The doc author
-    renames that section in place every day, so its slug changes daily."""
-    best, best_n = None, -1
+def news_section_slug(site):
+    """Slug of the dated news section (`edit. DD.MM.YY`), if the doc has one.
+
+    It is the page the author retitles every morning, so it is the one whose
+    slug must not follow its heading (see NEWS_SLUG)."""
     for sec in site.sections:
-        m = re.match(r"^edit-(\d+)$", sec["slug"])
-        if m and int(m.group(1)) > best_n:
-            best, best_n = sec["slug"], int(m.group(1))
-    return best
+        if sec.get("dated_news"):
+            return sec["slug"]
+    return None
 
 
 def render_404_page(site):
     """A real 404 page. Without one, Cloudflare Pages serves the homepage
-    (HTTP 200) for any unknown path, so links shared to the daily-renamed
-    'edit. DD.MM.YY' news section silently show the wrong snapshot. This
-    page forwards old dated-section links to the newest one, keeping the
-    #heading anchor (heading ids survive the daily rename)."""
-    latest = _latest_edit_slug(site)
-    if latest:
+    (HTTP 200) for any unknown path, so a link shared to the daily-renamed
+    'edit. DD.MM.YY' news section silently shows the wrong snapshot. This
+    page forwards such dated links to the news page, which keeps a stable
+    URL, so the forward target no longer changes daily. The #heading anchor
+    is kept on the way through (heading ids survive the daily rename)."""
+    news = news_section_slug(site)
+    if news:
         redirect_js = (
             "(function(){\n"
             "  var seg = location.pathname.replace(/.*\\//, '').replace(/\\.html$/, '');\n"
             "  if (/^edit-/.test(seg)) {\n"
             "    var dir = location.pathname.replace(/\\/[^/]*$/, '/');\n"
-            "    var target = dir + '%(latest)s' + location.search + location.hash;\n"
+            "    var target = dir + '%(news)s' + location.search + location.hash;\n"
             "    var msg = document.getElementById('msg');\n"
             "    if (msg) msg.textContent =\n"
             "      'This daily news section was renamed \u2014 redirecting to the current one\u2026';\n"
             "    setTimeout(function(){ location.replace(target); }, 300);\n"
             "  }\n"
             "})();"
-        ) % {"latest": latest}
+        ) % {"news": news}
     else:
         redirect_js = ""
     return """<!doctype html>
@@ -2214,9 +2242,9 @@ def home_section_slug(site):
     """Slug of the section the site serves as its front page (index.html).
 
     `render_index` renders that section's body into index.html, so outline
-    links to it can use the site root (/#h.…) instead of the section's own
-    slug — which for the daily news section is renamed every day
-    (edit. DD.MM.YY) and would otherwise date every link in the index.
+    links to it can use the site root (/#h.…) rather than a page of its own:
+    the site's front page is the root, and the news section at the top of the
+    document is its front page.
     """
     return site.sections[0]["slug"] if site.sections else None
 
@@ -2567,11 +2595,20 @@ def write_seo_files(site, out, base_url):
     for s in feed_sections or site.sections:
         loc = base_url + "/" + s["slug"]
         desc = _esc_xml((s.get("text") or "")[:300])
+        # The news page keeps one stable URL, but its heading is retitled every
+        # day, so its link still lands somewhere permanent. Its guid has to move
+        # with the date all the same: readers treat an unchanged guid as the
+        # same item, and the daily update would stop reaching them.
+        if s.get("dated_news"):
+            guid = '    <guid isPermaLink="false">%s</guid>\n' % _esc_xml(
+                f"{s['slug']}:{slugify(s['title'])}")
+        else:
+            guid = '    <guid isPermaLink="true">%s</guid>\n' % _esc_xml(loc)
         items.append(
             "  <item>\n"
             "    <title>%s</title>\n" % _esc_xml(s["title"])
             + "    <link>%s</link>\n" % _esc_xml(loc)
-            + '    <guid isPermaLink="true">%s</guid>\n' % _esc_xml(loc)
+            + guid
             + "    <description>%s</description>\n" % desc
             + "    <pubDate>%s</pubDate>\n" % stamp
             + "  </item>")

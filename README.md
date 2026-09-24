@@ -6,6 +6,7 @@ A fast, lightweight static site mirror of the [MSST Bible Google Doc](https://do
 
 - **Fast loading** — one page per heading, so you load a section at a time instead of the whole 13MB document
 - **A titled URL for every heading** — pages nest the way the doc outlines them (`/de-reverb`); links minted before that change (`/#h.…`) are forwarded to the page that now owns the heading
+- **A stable news URL** — the daily news section is retitled `edit. DD.MM.YY` every morning, so its page keeps the fixed `/news` address and the date lives in the title only; links to older dated URLs (`/edit-170926`) forward to it
 - **Dark mode** — default theme with light/dark toggle
 - **Full outline** — the sidebar mirrors the document's heading tree
 - **Link check** — the build fails (instead of shipping) if a doc edit breaks an internal link, a `#heading` anchor, or the generated markup (duplicate ids, unclosed tags)

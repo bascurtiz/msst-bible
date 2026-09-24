@@ -56,6 +56,25 @@ def main():
                     self.path = pretty + ("?" + url.query if url.query else "")
             return super().send_head()
 
+        def send_error(self, code, message=None, explain=None):
+            # Cloudflare Pages answers an unknown path with the site's own
+            # 404.html (that page forwards links to the daily-renamed news
+            # section). Serve the same file here so those forwards can be
+            # tested locally instead of only after a deploy.
+            if code == 404:
+                page = os.path.join(args.dir, "404.html")
+                if os.path.exists(page):
+                    with open(page, "rb") as f:
+                        body = f.read()
+                    self.send_response(404)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    if self.command != "HEAD":
+                        self.wfile.write(body)
+                    return
+            super().send_error(code, message, explain)
+
     try:
         srv = ThreadingHTTPServer((args.host, args.port), Handler)
     except OSError as e:

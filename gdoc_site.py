@@ -2273,15 +2273,21 @@ def home_section_slug(site):
 
 def strip_own_heading(sec):
     """The section's blocks without its own title heading (that heading is
-    already shown as the page title), skipping any leading document front
-    matter (a Title/Subtitle line) that precedes it."""
+    already shown as the page title).
+
+    The title heading is the first heading in the section, but it need not be
+    the first block: the document's front matter (a Title/Subtitle line) and,
+    for a tab's opening section, any spacer/empty paragraphs ahead of the
+    first real heading are prepended to the section. Search for the heading
+    itself instead of assuming a fixed position, so it is never emitted twice
+    (once as the page's <h1>, once in the body)."""
     blocks = list(sec["blocks"])
-    i = 0
-    while i < len(blocks) and blocks[i].get("doc_meta"):
-        i += 1
-    if (i < len(blocks) and blocks[i]["type"] == "heading"
-            and blocks[i].get("heading_id") == sec.get("heading_id")):
-        del blocks[i]
+    hid = sec.get("heading_id")
+    if hid:
+        for i, b in enumerate(blocks):
+            if b.get("type") == "heading" and b.get("heading_id") == hid:
+                del blocks[i]
+                break
     return blocks
 
 

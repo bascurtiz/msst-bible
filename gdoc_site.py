@@ -1746,8 +1746,17 @@ footer { margin-top: 48px; font-size: 13px; color: var(--muted); }
 APP_JS = """\
 (function () {
   // in-page highlight: landing here with ?q=terms (from a search result
-  // click) marks every occurrence of the terms in the document text
+  // click) marks every occurrence of the terms in the document text. Terms
+  // the search matched loosely arrive as &loose=term,term and are marked as
+  // substrings too, so a hit inside a longer token ("giant" in
+  // "giantailab") is highlighted instead of the page landing bare.
+  var looseTokens = {};
+  ((location.search.match(/[?&]loose=([^&]*)/) || [])[1] || "")
+    .split(",").forEach(function (t) {
+      if (t) looseTokens[decodeURIComponent(t).toLowerCase()] = true;
+    });
   function findWord(lower, tk, from) {
+    if (looseTokens[tk]) return lower.indexOf(tk, from || 0);
     var i = lower.indexOf(tk, from || 0);
     while (i !== -1) {
       var b = i === 0 || !/[a-z0-9]/.test(lower.charAt(i - 1));
@@ -1806,7 +1815,7 @@ APP_JS = """\
   function qs(sel) { return document.querySelector(sel); }
 
   // whole-word (case-insensitive) matching: "bas" must not match "based"
-  function findWord(lower, tk, from) {
+  function findWhole(lower, tk, from) {
     var i = lower.indexOf(tk, from || 0);
     while (i !== -1) {
       var b = i === 0 || !/[a-z0-9]/.test(lower.charAt(i - 1));
@@ -1816,6 +1825,17 @@ APP_JS = """\
       i = lower.indexOf(tk, i + 1);
     }
     return -1;
+  }
+  // A term the document never contains as a whole word is matched loosely
+  // (as a substring) instead of finding nothing: that is what lets "giant"
+  // find the section holding "bs_karaoke_3stem_giantailab". Terms that do
+  // occur as whole words keep the strict match, so "bas" still skips
+  // "based". Loose terms ride along on the result URL (see `render`) so the
+  // target page highlights the same text the search matched.
+  var looseTokens = {};
+  function findWord(lower, tk, from) {
+    return looseTokens[tk] ? lower.indexOf(tk, from || 0)
+      : findWhole(lower, tk, from);
   }
 
   // --- theme toggle (persisted in localStorage; default dark) -------------
@@ -1975,7 +1995,10 @@ APP_JS = """\
         var a = document.createElement("a");
         a.className = "sr";
         var aid = anchorAt(s.full || "", s, tokens);
-        var qs = "?q=" + encodeURIComponent(input.value.trim());
+        var loose = tokens.filter(function (tk) { return looseTokens[tk]; });
+        var qs = "?q=" + encodeURIComponent(input.value.trim())
+          + (loose.length
+            ? "&loose=" + loose.map(encodeURIComponent).join(",") : "");
         // the front section is served from the site root, which is its
         // canonical URL; every other page uses its own slug
         a.href = (s.slug === (data && data.home) ? "/" : s.slug)
@@ -2018,10 +2041,8 @@ APP_JS = """\
       backdrop.style.display = "none";
     }
 
-    function search() {
-      var val = input.value.trim().toLowerCase();
-      if (!val || !data) { box.innerHTML = ""; hidePanel(); return; }
-      tokens = val.split(/\s+/);
+    // every section whose text carries all query tokens, best match first
+    function collect(val) {
       var out = [];
       data.sections.forEach(function (s) {
         if (tokens.every(function (tk) { return findWord(s._hay, tk, 0) !== -1; })) {
@@ -2038,6 +2059,25 @@ APP_JS = """\
         }
       });
       out.sort(function (a, b) { return a.score - b.score; });
+      return out;
+    }
+
+    function search() {
+      var val = input.value.trim().toLowerCase();
+      if (!val || !data) { box.innerHTML = ""; hidePanel(); return; }
+      tokens = val.split(/\s+/).filter(Boolean);
+      // Each term is matched whole-word unless the document never contains
+      // it as a whole word — then it is matched loosely (as a substring), so
+      // "giant" still finds "…_giantailab" while "bas" keeps skipping
+      // "based", because the document does have whole-word "bas" hits.
+      looseTokens = {};
+      tokens.forEach(function (tk) {
+        var asWholeWord = data.sections.some(function (s) {
+          return findWhole(s._hay, tk, 0) !== -1;
+        });
+        if (!asWholeWord) looseTokens[tk] = true;
+      });
+      var out = collect(val);
       var top = out.slice(0, 25).map(function (o) { return o.s; });
       var total = 0;
       top.forEach(function (s) { total += countTokens(s.full || "", tokens); });

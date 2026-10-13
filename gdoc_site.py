@@ -1767,6 +1767,7 @@ APP_JS = """\
     }
     return -1;
   }
+  var firstMark = null;
   var m = location.search.match(/[?&]q=([^&]+)/);
   if (m) {
     var terms = decodeURIComponent(m[1].replace(/\+/g, " ")).toLowerCase()
@@ -1798,10 +1799,28 @@ APP_JS = """\
           if (best > pos) frag.appendChild(document.createTextNode(txt.slice(pos, best)));
           var mk = document.createElement("mark");
           mk.textContent = txt.slice(best, best + bl);
+          if (!firstMark) firstMark = mk;  // earliest match in the page
           frag.appendChild(mk);
           pos = best + bl;
         }
         node.parentNode.replaceChild(frag, node);
+      }
+      // Deep-linking to the matching sub-heading alone is not enough: when a
+      // section has no heading near the hit (a long run of prose, or headings
+      // demoted to paragraphs), the nearest anchor can sit far earlier in the
+      // page. Scroll the highlighted match itself into view so the result
+      // lands on the text it promised. Wait for load because the browser's
+      // own fragment jump may run after this script.
+      if (firstMark) {
+        var reveal = function () {
+          try { firstMark.scrollIntoView({ block: "center" }); }
+          catch (e) { firstMark.scrollIntoView(); }
+        };
+        if (document.readyState === "complete") {
+          setTimeout(reveal, 0);
+        } else {
+          window.addEventListener("load", function () { setTimeout(reveal, 0); });
+        }
       }
     }
   }
@@ -2433,7 +2452,15 @@ def section_full_text(section):
         for b in blocks:
             t = b["type"]
             if t == "para":
-                add(text_of_runs(b.get("runs", [])))
+                # Paragraphs can carry a heading id too: a heading whose first
+                # line is body prose is demoted to a paragraph (see
+                # normalize_heading) and an empty heading becomes a blank
+                # paragraph. Both still render with their anchor id, so the
+                # search index has to list them — otherwise a hit that falls
+                # after such a demoted heading deep-links to the last real
+                # heading, which can sit far earlier in the section.
+                ptxt = text_of_runs(b.get("runs", []))
+                add(ptxt, b.get("heading_id"), ptxt)
             elif t == "heading":
                 ht = text_of_runs(b.get("runs", []))
                 add(ht, b.get("heading_id"), ht)

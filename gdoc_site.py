@@ -2518,7 +2518,14 @@ def page_head(site, i, sec):
 
 
 def page_pager(site, i, home):
-    """Prev/next links walking the document in reading order."""
+    """Prev/next links walking the document in reading order.
+
+    The next link reads "Continue reading" instead of naming the page it goes
+    to. The document is split one page per heading, so that name is just the
+    opening text of a chunk of a larger section; readers took it as a promise
+    about what the page would hold, and stopped there when the part they
+    wanted turned out to be further down it. The page's own name stays
+    available as a hover tooltip."""
     total = len(site.sections)
     pager = ['<nav class="pager">']
     if i > 0:
@@ -2527,8 +2534,9 @@ def page_pager(site, i, home):
                      f'← {esc(nav_title(prev["title"], prev.get("heading_id")))}</a>')
     if i + 1 < total:
         nxt = site.sections[i + 1]
-        pager.append(f'<a class="next" href="{toc_href(home, nxt["slug"])}">'
-                     f'{esc(nav_title(nxt["title"], nxt.get("heading_id")))} →</a>')
+        nxt_label = attr(nav_title(nxt["title"], nxt.get("heading_id")))
+        pager.append(f'<a class="next" href="{toc_href(home, nxt["slug"])}" '
+                     f'title="{nxt_label}">Continue reading →</a>')
     pager.append('</nav>')
     return "".join(pager)
 

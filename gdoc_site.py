@@ -171,6 +171,11 @@ RESERVED_SLUGS = frozenset(("index", "contents", "404", "assets"))
 NEWS_SLUG = "news"
 DATED_SLUG_RE = re.compile(r"^edit-\d+$")
 
+# Page the contents index sends readers on to at its end. The index lists every
+# heading but is otherwise a dead end — it had no "Continue reading" link while
+# every other page does — so it ends with one pointing at the doc's news page.
+UPDATES_SLUG = "last-updates-and-news"
+
 
 # ---------------------------------------------------------------------------
 # link resolution
@@ -2583,6 +2588,17 @@ def render_index(site):
                          chr(10).join(body), first["slug"])
 
 
+def updates_section_slug(site):
+    """Slug of the page the contents index continues reading into.
+
+    Prefer the doc's news page; a doc edit that renames its heading changes
+    that slug, so fall back to the news section (what the site serves from its
+    root) rather than emit a link to a page that no longer exists."""
+    if any(s["slug"] == UPDATES_SLUG for s in site.sections):
+        return UPDATES_SLUG
+    return news_section_slug(site)
+
+
 def render_contents(site):
     """The index page: every page of the document, nested in reading order,
     mirroring the Google Doc's "Document tabs" panel."""
@@ -2605,6 +2621,13 @@ def render_contents(site):
         if multi:
             body.append('</ul></li>')
     body.append('</ul>')
+    updates = updates_section_slug(site)
+    if updates:
+        target = next(s for s in site.sections if s["slug"] == updates)
+        label = attr(nav_title(target["title"], target.get("heading_id")))
+        body.append(f'<nav class="pager"><a class="next" '
+                    f'href="{toc_href(home, updates)}" title="{label}">'
+                    f'Continue reading →</a></nav>')
     return page_template(site, site.title, sidebar_html(site), "\n".join(body),
                          None, canon_slug="contents")
 
